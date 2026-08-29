@@ -372,15 +372,13 @@ export default function Catalogo() {
   useEffect(() => {
     const loadServicios = async () => {
       try {
-        let { data, error } = await supabase.from('catalogo_servicios').select('*').order('created_at', { ascending: true });
+        let { data, error } = await supabase.from('catalogo_servicios').select('*');
         if (error) throw error;
-        
         if (!data || data.length === 0) {
-          // seed initial data
-          const { data: newSvc, error: insertErr } = await supabase.from('catalogo_servicios').insert(INITIAL_CATALOGO).select();
-          if (newSvc) data = newSvc;
+          setServicios(INITIAL_CATALOGO); // fallback si está vacío sin hacer inserción forzada
+        } else {
+          setServicios(data || []);
         }
-        setServicios(data || []);
       } catch (e) {
         console.error('Error loading catalogo:', e);
       } finally {
