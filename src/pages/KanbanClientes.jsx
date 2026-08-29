@@ -59,7 +59,7 @@ const mapToKanbanForm = (row) => ({
   contrato: {
     valor: row.contrato_valor,
     divisa: row.contrato_divisa,
-    estadoContrato: row.etapa_comercial || row.estado_contrato, // Fallback si etapa_comercial está vacío
+    estadoContrato: COLUMNAS.includes(row.etapa_comercial) ? row.etapa_comercial : 'Prospecto',
     modeloComercial: row.contrato_esquema
   },
   etapa_comercial: row.etapa_comercial,

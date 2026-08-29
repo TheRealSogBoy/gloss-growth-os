@@ -405,7 +405,7 @@ export default function KanbanTareas() {
                         <input 
                           type="checkbox" checked={c.completado}
                           onChange={() => {
-                            const nc = selectedTarea.checklist.map(item => item.id === c.id ? {...item, completado: !item.completado} : item);
+                            const nc = (selectedTarea.checklist || []).map(item => item.id === c.id ? {...item, completado: !item.completado} : item);
                             updateSelected({ checklist: nc });
                           }}
                           className="w-4 h-4 rounded text-gloss-burgundy focus:ring-gloss-burgundy border-gray-300 cursor-pointer"
@@ -413,12 +413,12 @@ export default function KanbanTareas() {
                         <input 
                           value={c.text}
                           onChange={(e) => {
-                            const nc = selectedTarea.checklist.map(item => item.id === c.id ? {...item, text: e.target.value} : item);
+                            const nc = (selectedTarea.checklist || []).map(item => item.id === c.id ? {...item, text: e.target.value} : item);
                             updateSelected({ checklist: nc });
                           }}
                           className={`flex-1 bg-transparent border-none p-1 text-sm focus:ring-1 focus:ring-gray-300 rounded ${c.completado ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}
                         />
-                        <button onClick={() => updateSelected({ checklist: selectedTarea.checklist.filter(i => i.id !== c.id) })} className="opacity-50 group-hover:opacity-100 text-red-500 hover:text-red-700 p-1 transition-opacity"><Trash2 size={16}/></button>
+                        <button onClick={() => updateSelected({ checklist: (selectedTarea.checklist || []).filter(i => i.id !== c.id) })} className="opacity-50 group-hover:opacity-100 text-red-500 hover:text-red-700 p-1 transition-opacity"><Trash2 size={16}/></button>
                       </div>
                     ))}
                   </div>
@@ -575,7 +575,7 @@ export default function KanbanTareas() {
                         <a href={link.url.startsWith('http') ? link.url : `https://${link.url}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400 hover:underline min-w-0">
                           <Link2 size={14} className="flex-shrink-0"/> <span className="truncate">{link.title}</span>
                         </a>
-                        <button onClick={() => { const nl = [...selectedTarea.enlaces]; nl.splice(i,1); updateSelected({ enlaces: nl }); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
+                        <button onClick={() => { const nl = [...(selectedTarea.enlaces || [])]; nl.splice(i,1); updateSelected({ enlaces: nl }); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
                       </div>
                     ))}
                   </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, Map, Megaphone, Monitor, LayoutTemplate, 
   Share2, Briefcase, ChevronDown, ChevronUp, CheckCircle2, 
