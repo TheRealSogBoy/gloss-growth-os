@@ -400,3 +400,11 @@ const QuickModal = ({ type, onClose }) => {
     </div>
   );
 };
+
+
+const EstadoBadge = ({ dias }) => {
+  if (dias < 0) return <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Vencido</span>;
+  if (dias === 0) return <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">Vence Hoy</span>;
+  if (dias <= 5) return <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">En {dias} días</span>;
+  return <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">En {dias} días</span>;
+};
