@@ -516,7 +516,7 @@ export default function Catalogo() {
 
       {/* ── GRID ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map((s) => {
+        {filtered?.map((s) => {
           const isEx   = expandedIds.includes(s.id);
           const inCart = cart.some((c) => c.id === s.id);
           const Ico    = ICON_MAP[s.icono] || Megaphone;
@@ -539,7 +539,7 @@ export default function Catalogo() {
                 {isEx && (
                   <div className="p-5 bg-gray-50/80 dark:bg-gray-900/40 border-t border-gray-100 dark:border-gray-800 space-y-3">
                     <ul className="space-y-2">
-                      {s.entregables.map((e, i) => (
+                      {s.entregables?.map((e, i) => (
                         <li key={i} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
                           <CheckCircle2 size={15} className="text-green-500 flex-shrink-0 mt-0.5"/>{e}
                         </li>
@@ -672,7 +672,7 @@ export default function Catalogo() {
               <div className="border border-gray-200 dark:border-gray-800 rounded-xl p-5">
                 <h4 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><ShoppingCart size={18} className="text-gloss-burgundy"/> Ajuste de Precios</h4>
                 <div className="space-y-3">
-                  {cart.map((item) => (
+                  {cart?.map((item) => (
                     <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-800">
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-gray-900 dark:text-white truncate">{item.nombre}</p>

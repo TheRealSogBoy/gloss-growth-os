@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   Building2, User, DollarSign, GripVertical, MapPin, 
-  X, Phone, Mail, FileText, ChevronRight, Filter, Video, Calendar, AlertCircle, Clock
+  X, Phone, Mail, FileText, ChevronRight, Filter, Video, Calendar, AlertCircle, Clock, Plus
 } from 'lucide-react';
 
 // === DATOS SIMULADOS ===
@@ -58,18 +59,20 @@ const mapToKanbanForm = (row) => ({
   contrato: {
     valor: row.contrato_valor,
     divisa: row.contrato_divisa,
-    estadoContrato: row.estado_contrato,
+    estadoContrato: row.etapa_comercial || row.estado_contrato, // Fallback si etapa_comercial está vacío
     modeloComercial: row.contrato_esquema
   },
+  etapa_comercial: row.etapa_comercial,
   notas: row.notas_kanban || {}
 });
 
 const mapToRow = (form) => ({
-  estado_contrato: form.contrato?.estadoContrato,
+  etapa_comercial: form.contrato?.estadoContrato, // El Kanban actualiza la etapa
   notas_kanban: form.notas || {}
 });
 
 export default function KanbanClientes() {
+  const navigate = useNavigate();
   
   const [clientes, setClientes] = useState([]);
   const [loadingClientes, setLoadingClientes] = useState(true);
@@ -143,8 +146,17 @@ export default function KanbanClientes() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Gestión del flujo de ventas y remarketing.</p>
         </div>
         
-        {/* Filtros Rápidos */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        
+          {/* Filtros Rápidos y Acciones */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center">
+            <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm">
+              <Plus size={16}/> Nuevo Prospecto
+            </button>
+
+        <div className="flex flex-col sm:flex-row gap-3 items-center">
+            <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
+              <Plus size={16}/> Nuevo Prospecto
+            </button>
           <div className="relative">
             <Filter size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"/>
             <select 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   Search, Plus, X, Phone, Mail, Building2, MapPin, 
@@ -125,9 +126,18 @@ const mapToRow = (form) => ({
 });
 
 export default function Directorio() {
-  
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [clientes, setClientes] = useState([]);
   const [loadingClientes, setLoadingClientes] = useState(true);
+
+  useEffect(() => {
+    if (location.state?.openNewModal) {
+      openNewModal();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
 
   useEffect(() => {
     fetchClientes();
@@ -624,7 +634,16 @@ export default function Directorio() {
                       <div key={idx} className="flex flex-col md:flex-row gap-3 items-end md:items-center p-3 border border-gray-100 dark:border-gray-800 rounded-lg bg-gray-50 dark:bg-gray-900/40">
                         <div className="w-full md:flex-1">
                           <label className="block text-[10px] font-medium uppercase text-gray-500 mb-1">Concepto / Hito</label>
-                          <input required value={cuota.concepto} onChange={e=>handlePlanPagoChange(idx, 'concepto', e.target.value)} placeholder="Ej: Anticipo 50%" className="w-full px-2 py-1.5 text-sm rounded border dark:border-gray-700 bg-white dark:bg-gray-800"/>
+                          <select required value={cuota.concepto} onChange={e=>handlePlanPagoChange(idx, 'concepto', e.target.value)} className="w-full px-2 py-1.5 text-sm rounded border dark:border-gray-700 bg-white dark:bg-gray-800 cursor-pointer">
+                            <option value="">Selecciona un hito...</option>
+                            <option value="Cuota / Anticipo">Cuota / Anticipo</option>
+                            <option value="Mensualidad">Mensualidad</option>
+                            <option value="Pago Completo">Pago Completo</option>
+                            <option value="Anticipo 50%">Anticipo 50%</option>
+                            <option value="Pago Final 50%">Pago Final 50%</option>
+                            <option value="Mantenimiento">Mantenimiento</option>
+                            <option value="Desarrollo Adicional">Desarrollo Adicional</option>
+                          </select>
                         </div>
                         <div className="w-full md:w-32">
                           <label className="block text-[10px] font-medium uppercase text-gray-500 mb-1">Monto Esperado</label>

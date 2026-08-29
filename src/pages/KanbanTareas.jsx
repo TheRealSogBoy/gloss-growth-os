@@ -352,7 +352,7 @@ export default function KanbanTareas() {
                   <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Etiquetas</h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedTarea.etiquetas.map((tag, i) => (
+                      {selectedTarea.etiquetas?.map((tag, i) => (
                         <span key={i} className={`text-xs font-bold px-3 py-1.5 rounded border ${tag.colorClass} flex items-center gap-1 group`}>
                           {tag.text} 
                           <X size={12} className="cursor-pointer opacity-50 group-hover:opacity-100 transition-opacity" onClick={() => {
@@ -570,7 +570,7 @@ export default function KanbanTareas() {
                 <div>
                   <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Adjuntos de la Tarea</h4>
                   <div className="space-y-2">
-                    {selectedTarea.enlaces.map((link, i) => (
+                    {selectedTarea.enlaces?.map((link, i) => (
                       <div key={i} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg group">
                         <a href={link.url.startsWith('http') ? link.url : `https://${link.url}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400 hover:underline min-w-0">
                           <Link2 size={14} className="flex-shrink-0"/> <span className="truncate">{link.title}</span>

@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 
 // === Mock Data Inicial ===
-const initialBovedaAcumulada = 5000000;
-const initialSaldoBaseDavilson = 1500000;
-const initialSaldoBaseSantiago = 1500000;
+const initialBovedaAcumulada = 0;
+const initialSaldoBaseDavilson = 0;
+const initialSaldoBaseSantiago = 0;
 
 export default function Finanzas() {
   // === ESTADOS (Listas de datos) ===
