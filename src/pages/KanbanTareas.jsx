@@ -285,7 +285,9 @@ export default function KanbanTareas() {
       {/* ========================================================= */}
       {/* MODAL DETALLADO DE TARJETA (ESTILO TRELLO)                  */}
       {/* ========================================================= */}
-      {selectedTarea && (
+      {selectedTarea && (() => {
+        const tarea = selectedTarea || {};
+        return (
         <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm">
           
           {/* Contenedor central robusto para evitar recortes de zoom/altura */}
@@ -307,13 +309,13 @@ export default function KanbanTareas() {
                 <CreditCard className="text-gray-500 mt-1 flex-shrink-0" size={24}/>
                 <div className="flex-1 min-w-0">
                   <textarea 
-                    value={selectedTarea.titulo}
+                    value={tarea.titulo}
                     onChange={(e) => updateSelected({ titulo: e.target.value })}
                     className="w-full text-xl sm:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white resize-none outline-none leading-tight"
                     rows={2}
                   />
                   <p className="text-sm text-gray-500 mt-1">
-                    En la lista <span className="font-semibold underline cursor-pointer">{selectedTarea.estado}</span> 
+                    En la lista <span className="font-semibold underline cursor-pointer">{tarea.estado}</span> 
                   </p>
                 </div>
               </div>
@@ -326,10 +328,10 @@ export default function KanbanTareas() {
                   <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Responsable</h4>
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-gloss-burgundy text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                      {selectedTarea.responsable?.substring(0, 2).toUpperCase() || '?'}
+                      {tarea.responsable?.substring(0, 2).toUpperCase() || '?'}
                     </div>
                     <select 
-                      value={selectedTarea.responsable} onChange={(e) => updateSelected({ responsable: e.target.value })}
+                      value={tarea.responsable} onChange={(e) => updateSelected({ responsable: e.target.value })}
                       className="bg-transparent border-none focus:ring-0 p-0 text-sm font-medium cursor-pointer"
                     >
                       {listaResponsables.map(r => <option key={r}>{r}</option>)}
@@ -338,25 +340,25 @@ export default function KanbanTareas() {
                 </div>
 
                 {/* Prioridad NATIVA */}
-                {selectedTarea.prioridad && selectedTarea.prioridad !== 'Ninguna' && (
+                {tarea.prioridad && tarea.prioridad !== 'Ninguna' && (
                   <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Prioridad</h4>
-                    <span className={`text-xs font-bold px-3 py-1.5 rounded border flex items-center gap-1 ${getPrioridadBadge(selectedTarea.prioridad)?.class}`}>
-                      <Flag size={12}/> {selectedTarea.prioridad}
+                    <span className={`text-xs font-bold px-3 py-1.5 rounded border flex items-center gap-1 ${getPrioridadBadge(tarea.prioridad)?.class}`}>
+                      <Flag size={12}/> {tarea.prioridad}
                     </span>
                   </div>
                 )}
 
                 {/* Etiquetas */}
-                {selectedTarea.etiquetas?.length > 0 && (
+                {tarea.etiquetas?.length > 0 && (
                   <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Etiquetas</h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedTarea.etiquetas?.map((tag, i) => (
+                      {tarea.etiquetas?.map((tag, i) => (
                         <span key={i} className={`text-xs font-bold px-3 py-1.5 rounded border ${tag.colorClass} flex items-center gap-1 group`}>
                           {tag.text} 
                           <X size={12} className="cursor-pointer opacity-50 group-hover:opacity-100 transition-opacity" onClick={() => {
-                            const nt = [...selectedTarea.etiquetas]; nt.splice(i, 1); updateSelected({ etiquetas: nt });
+                            const nt = [...tarea.etiquetas]; nt.splice(i, 1); updateSelected({ etiquetas: nt });
                           }}/>
                         </span>
                       ))}
@@ -365,11 +367,11 @@ export default function KanbanTareas() {
                 )}
                 
                 {/* Vencimiento */}
-                {selectedTarea.fechaLimite && (
+                {tarea.fechaLimite && (
                   <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Vencimiento</h4>
                     <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded text-sm shadow-sm border border-gray-200 dark:border-gray-700">
-                      <input type="date" value={selectedTarea.fechaLimite} onChange={(e) => updateSelected({ fechaLimite: e.target.value })} className="bg-transparent border-none p-0 h-auto font-medium focus:ring-0 text-gray-800 dark:text-gray-200 cursor-pointer"/>
+                      <input type="date" value={tarea.fechaLimite} onChange={(e) => updateSelected({ fechaLimite: e.target.value })} className="bg-transparent border-none p-0 h-auto font-medium focus:ring-0 text-gray-800 dark:text-gray-200 cursor-pointer"/>
                     </div>
                   </div>
                 )}
@@ -381,7 +383,7 @@ export default function KanbanTareas() {
                 <div className="flex-1 min-w-0">
                   <h3 className="text-lg font-bold mb-3">Descripción</h3>
                   <textarea 
-                    value={selectedTarea.descripcion} onChange={(e) => updateSelected({ descripcion: e.target.value })}
+                    value={tarea.descripcion} onChange={(e) => updateSelected({ descripcion: e.target.value })}
                     placeholder="Añadir una descripción más detallada..."
                     className="w-full bg-gray-100 dark:bg-gray-800/50 border-none rounded-xl p-4 text-sm focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-gloss-burgundy min-h-[100px] transition-colors resize-y"
                   />
@@ -395,17 +397,17 @@ export default function KanbanTareas() {
                   <h3 className="text-lg font-bold mb-3 flex justify-between items-center">
                     Checklist
                     <span className="text-xs font-medium text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                      {selectedTarea.checklist?.length > 0 ? Math.round(((selectedTarea.checklist?.filter(c=>c.completado).length || 0) / (selectedTarea.checklist?.length || 1)) * 100) : 0}%
+                      {tarea.checklist?.length > 0 ? Math.round(((tarea.checklist?.filter(c=>c.completado).length || 0) / (tarea.checklist?.length || 1)) * 100) : 0}%
                     </span>
                   </h3>
                   
                   <div className="space-y-2 mb-3">
-                    {selectedTarea.checklist?.map(c => (
+                    {tarea.checklist?.map(c => (
                       <div key={c.id} className="flex items-center gap-3 group bg-white dark:bg-gray-900/40 p-2 rounded-lg border border-gray-100 dark:border-gray-800">
                         <input 
                           type="checkbox" checked={c.completado}
                           onChange={() => {
-                            const nc = (selectedTarea.checklist || []).map(item => item.id === c.id ? {...item, completado: !item.completado} : item);
+                            const nc = (tarea.checklist || []).map(item => item.id === c.id ? {...item, completado: !item.completado} : item);
                             updateSelected({ checklist: nc });
                           }}
                           className="w-4 h-4 rounded text-gloss-burgundy focus:ring-gloss-burgundy border-gray-300 cursor-pointer"
@@ -413,12 +415,12 @@ export default function KanbanTareas() {
                         <input 
                           value={c.text}
                           onChange={(e) => {
-                            const nc = (selectedTarea.checklist || []).map(item => item.id === c.id ? {...item, text: e.target.value} : item);
+                            const nc = (tarea.checklist || []).map(item => item.id === c.id ? {...item, text: e.target.value} : item);
                             updateSelected({ checklist: nc });
                           }}
                           className={`flex-1 bg-transparent border-none p-1 text-sm focus:ring-1 focus:ring-gray-300 rounded ${c.completado ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}
                         />
-                        <button onClick={() => updateSelected({ checklist: (selectedTarea.checklist || []).filter(i => i.id !== c.id) })} className="opacity-50 group-hover:opacity-100 text-red-500 hover:text-red-700 p-1 transition-opacity"><Trash2 size={16}/></button>
+                        <button onClick={() => updateSelected({ checklist: (tarea.checklist || []).filter(i => i.id !== c.id) })} className="opacity-50 group-hover:opacity-100 text-red-500 hover:text-red-700 p-1 transition-opacity"><Trash2 size={16}/></button>
                       </div>
                     ))}
                   </div>
@@ -426,7 +428,7 @@ export default function KanbanTareas() {
                   <form onSubmit={(e) => {
                     e.preventDefault();
                     if(!newCheckItem.trim()) return;
-                    updateSelected({ checklist: [...(selectedTarea.checklist||[]), { id: Date.now(), text: newCheckItem, completado: false }] });
+                    updateSelected({ checklist: [...(tarea.checklist||[]), { id: Date.now(), text: newCheckItem, completado: false }] });
                     setNewCheckItem('');
                   }} className="mt-2">
                     <input value={newCheckItem} onChange={e=>setNewCheckItem(e.target.value)} placeholder="Añadir un elemento al checklist..." className="w-full text-sm bg-gray-100 dark:bg-gray-800 border-none rounded-lg p-2.5 focus:ring-2 focus:ring-gloss-burgundy"/>
@@ -446,7 +448,7 @@ export default function KanbanTareas() {
                       e.preventDefault();
                       if(!newComment.trim()) return;
                       const date = new Date();
-                      updateSelected({ comentarios: [{ id: Date.now(), usuario: 'Yo (Actual)', fecha: `${date.getDate()}/${date.getMonth()+1} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`, texto: newComment }, ...(selectedTarea.comentarios||[])] });
+                      updateSelected({ comentarios: [{ id: Date.now(), usuario: 'Yo (Actual)', fecha: `${date.getDate()}/${date.getMonth()+1} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`, texto: newComment }, ...(tarea.comentarios||[])] });
                       setNewComment('');
                     }} className="flex-1 relative">
                       <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Escriba un comentario..." className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-gloss-burgundy min-h-[80px]" />
@@ -455,7 +457,7 @@ export default function KanbanTareas() {
                   </div>
 
                   <div className="space-y-4">
-                    {selectedTarea.comentarios?.map(c => (
+                    {tarea.comentarios?.map(c => (
                       <div key={c.id} className="flex gap-3">
                         <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 flex items-center justify-center text-xs font-bold flex-shrink-0">
                           {c.usuario?.substring(0,2).toUpperCase() || '?'}
@@ -484,7 +486,7 @@ export default function KanbanTareas() {
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Prioridad General</h4>
                 <select 
-                  value={selectedTarea.prioridad || 'Ninguna'} 
+                  value={tarea.prioridad || 'Ninguna'} 
                   onChange={e=>updateSelected({ prioridad: e.target.value })}
                   className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-sm focus:ring-1 focus:ring-gloss-burgundy font-medium shadow-sm"
                 >
@@ -496,7 +498,7 @@ export default function KanbanTareas() {
               <div>
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Cliente Asignado</h4>
                 <select 
-                  value={selectedTarea.cliente} onChange={e=>updateSelected({ cliente: e.target.value })}
+                  value={tarea.cliente} onChange={e=>updateSelected({ cliente: e.target.value })}
                   className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-sm focus:ring-1 focus:ring-gloss-burgundy shadow-sm"
                 >
                   {CLIENTES_MOCK.map(c => <option key={c}>{c}</option>)}
@@ -519,7 +521,7 @@ export default function KanbanTareas() {
                           {ETIQUETAS_COLORES.map((c, i) => (
                             <button key={i} onClick={() => {
                               if(!newTagText) return;
-                              updateSelected({ etiquetas: [...(selectedTarea.etiquetas||[]), { text: newTagText, colorClass: c.class }] });
+                              updateSelected({ etiquetas: [...(tarea.etiquetas||[]), { text: newTagText, colorClass: c.class }] });
                               setNewTagText(''); setShowTagMenu(false);
                             }} className={`w-full h-8 rounded-md ${c.class.split(' ')[0]} hover:opacity-80 border border-black/10`}/>
                           ))}
@@ -536,7 +538,7 @@ export default function KanbanTareas() {
                         <label className="block text-xs font-medium text-gray-500 mb-2">Seleccionar Vencimiento</label>
                         <input 
                           type="date" 
-                          value={selectedTarea.fechaLimite} 
+                          value={tarea.fechaLimite} 
                           onChange={(e) => { updateSelected({ fechaLimite: e.target.value }); setShowDateMenu(false); }} 
                           className="w-full text-sm p-2 border border-gray-200 dark:border-gray-700 rounded focus:ring-1 focus:ring-gloss-burgundy bg-transparent cursor-pointer"
                         />
@@ -555,7 +557,7 @@ export default function KanbanTareas() {
                           <button onClick={() => setShowLinkMenu(false)} className="px-3 py-1.5 text-xs text-gray-500 bg-gray-100 dark:bg-gray-800 rounded">Cancelar</button>
                           <button onClick={() => {
                             if(!newLinkUrl) return;
-                            updateSelected({ enlaces: [...(selectedTarea.enlaces||[]), { title: newLinkTitle || 'Link Adjunto', url: newLinkUrl }] });
+                            updateSelected({ enlaces: [...(tarea.enlaces||[]), { title: newLinkTitle || 'Link Adjunto', url: newLinkUrl }] });
                             setNewLinkTitle(''); setNewLinkUrl(''); setShowLinkMenu(false);
                           }} className="px-3 py-1.5 text-xs text-white bg-gloss-burgundy rounded">Adjuntar</button>
                         </div>
@@ -566,16 +568,16 @@ export default function KanbanTareas() {
                 </div>
               </div>
 
-              {selectedTarea.enlaces?.length > 0 && (
+              {tarea.enlaces?.length > 0 && (
                 <div>
                   <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">Adjuntos de la Tarea</h4>
                   <div className="space-y-2">
-                    {selectedTarea.enlaces?.map((link, i) => (
+                    {tarea.enlaces?.map((link, i) => (
                       <div key={i} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg group">
                         <a href={link.url.startsWith('http') ? link.url : `https://${link.url}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400 hover:underline min-w-0">
                           <Link2 size={14} className="flex-shrink-0"/> <span className="truncate">{link.title}</span>
                         </a>
-                        <button onClick={() => { const nl = [...(selectedTarea.enlaces || [])]; nl.splice(i,1); updateSelected({ enlaces: nl }); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
+                        <button onClick={() => { const nl = [...(tarea.enlaces || [])]; nl.splice(i,1); updateSelected({ enlaces: nl }); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-1"><Trash2 size={14}/></button>
                       </div>
                     ))}
                   </div>
@@ -586,8 +588,8 @@ export default function KanbanTareas() {
                 <button onClick={async () => {
                     if (window.confirm('¿Seguro que deseas eliminar esta tarea?')) {
                       try {
-                        await supabase.from('tareas').delete().eq('id', selectedTarea.id);
-                        setTareas(tareas.filter(t => t.id !== selectedTarea.id));
+                        await supabase.from('tareas').delete().eq('id', tarea.id);
+                        setTareas(tareas.filter(t => t.id !== tarea.id));
                         setSelectedTarea(null);
                       } catch(e) {}
                     }
@@ -597,7 +599,7 @@ export default function KanbanTareas() {
             </div>
           </div>
         </div>
-      )}
+      ); })()}
     </div>
   );
 }

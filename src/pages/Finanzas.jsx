@@ -6,10 +6,7 @@ import {
   Clock, CheckCircle, AlertTriangle
 } from 'lucide-react';
 
-// === Mock Data Inicial ===
-const initialBovedaAcumulada = 0;
-const initialSaldoBaseDavilson = 0;
-const initialSaldoBaseSantiago = 0;
+// === Constants Removed ===
 
 export default function Finanzas() {
   // === ESTADOS (Listas de datos) ===
@@ -29,28 +26,40 @@ export default function Finanzas() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ing, gas, gf, tdc, deu, ret] = await Promise.all([
-          supabase.from('finanzas_ingresos').select('*'),
-          supabase.from('finanzas_gastos').select('*'),
-          supabase.from('finanzas_gastos_fijos').select('*'),
-          supabase.from('finanzas_compras_tdc').select('*'),
-          supabase.from('finanzas_deudas').select('*'),
-          supabase.from('finanzas_retiros').select('*')
-        ]);
         
-        const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
-        const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
-        const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro });
-        const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
-        const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
-        const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
+          // Obtener de todas las tablas (retrocompatibilidad) y de transacciones_finanzas
+          const [ing, gas, gf, tdc, deu, ret, tf] = await Promise.all([
+            supabase.from('finanzas_ingresos').select('*'),
+            supabase.from('finanzas_gastos').select('*'),
+            supabase.from('finanzas_gastos_fijos').select('*'),
+            supabase.from('finanzas_compras_tdc').select('*'),
+            supabase.from('finanzas_deudas').select('*'),
+            supabase.from('finanzas_retiros').select('*'),
+            supabase.from('transacciones_finanzas').select('*')
+          ]);
+          
+          const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
+          const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
+          const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro });
+          const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
+          const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
+          const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
+          const mapTfIngreso = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
+          const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia' });
 
-        if (ing.data) setIngresos(ing.data.map(mapIng));
-        if (gas.data) setGastos(gas.data.map(mapGas));
-        if (gf.data) setGastosFijos(gf.data.map(mapFij));
-        if (tdc.data) setComprasTDC(tdc.data.map(mapTdc));
-        if (deu.data) setDeudasPendientes(deu.data.map(mapDeu));
-        if (ret.data) setRetiros(ret.data.map(mapRet));
+          let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
+          let fetchedGastos = gas.data ? gas.data.map(mapGas) : [];
+
+          if (tf.data) {
+             const tfIngresos = tf.data.filter(t => t.tipo === 'ingreso').map(mapTfIngreso);
+             const tfGastos = tf.data.filter(t => t.tipo === 'gasto').map(mapTfGasto);
+             fetchedIngresos = [...fetchedIngresos, ...tfIngresos];
+             fetchedGastos = [...fetchedGastos, ...tfGastos];
+          }
+
+          setIngresos(fetchedIngresos);
+          setGastos(fetchedGastos);
+
 
       } catch (err) {
         console.error('Error fetching finanzas', err);
@@ -120,9 +129,9 @@ export default function Finanzas() {
       totalGastosEfectivo: tGastosCaja,
       utilidadBrutaMes: uBruta,
       fondoReinversionMes: fReinversion,
-      fondoTotalBoveda: initialBovedaAcumulada + fReinversion,
-      saldoDavilson: initialSaldoBaseDavilson + gananciaSocio - retirosDavilson,
-      saldoSantiago: initialSaldoBaseSantiago + gananciaSocio - retirosSantiago,
+      fondoTotalBoveda: 0 + fReinversion,
+      saldoDavilson: 0 + gananciaSocio - retirosDavilson,
+      saldoSantiago: 0 + gananciaSocio - retirosSantiago,
       totalTDC: tTDC
     };
   }, [ingresos, gastos, gastosFijos, comprasTDC, retiros]);

@@ -146,17 +146,10 @@ export default function KanbanClientes() {
           <p className="text-gray-500 dark:text-gray-400 mt-1">Gestión del flujo de ventas y remarketing.</p>
         </div>
         
-        
-          {/* Filtros Rápidos y Acciones */}
-          <div className="flex flex-col sm:flex-row gap-3 items-center">
-            <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm">
-              <Plus size={16}/> Nuevo Prospecto
-            </button>
-
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-            <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
-              <Plus size={16}/> Nuevo Prospecto
-            </button>
+          <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
+            <Plus size={16}/> Nuevo Prospecto
+          </button>
           <div className="relative">
             <Filter size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"/>
             <select 

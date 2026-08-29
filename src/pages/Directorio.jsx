@@ -268,9 +268,29 @@ export default function Directorio() {
   const handleSave = async (e) => {
     e.preventDefault();
     const payload = mapToRow(form);
-    try {
-      if (isEditMode) {
-        const { data, error } = await supabase.from('clientes').update(payload).eq('id', form.id).select();
+      try {
+        if (isEditMode) {
+          
+          // --- AUTOMATIZACION FINANZAS ---
+          if (selectedClient && selectedClient.contrato?.planPagos && form.contrato?.planPagos) {
+            for (const cuota of form.contrato.planPagos) {
+              const oldCuota = selectedClient.contrato.planPagos.find(c => c.id === cuota.id);
+              if (oldCuota && oldCuota.estado !== 'Pagado' && cuota.estado === 'Pagado') {
+                await supabase.from('transacciones_finanzas').insert([{
+                  cliente_id: form.id,
+                  tipo: 'ingreso',
+                  categoria: 'pago_cuota',
+                  monto: cuota.monto,
+                  fecha_pago: new Date().toISOString().split('T')[0],
+                  estado: 'completado',
+                  descripcion: `Pago de cuota: ${form.negocio?.nombre}`
+                }]);
+              }
+            }
+          }
+          // --- FIN AUTOMATIZACION ---
+
+          const { data, error } = await supabase.from('clientes').update(payload).eq('id', form.id).select();
         if (error) throw error;
         if (data && data.length > 0) {
           const updated = mapToForm(data[0]);
