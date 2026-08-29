@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="100%" height="100%">
+  <defs>
+    <linearGradient id="glossGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8C2536" />
+      <stop offset="50%" stop-color="#A52D42" />
+      <stop offset="100%" stop-color="#5E1421" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDA4AF" />
+      <stop offset="100%" stop-color="#F43F5E" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#8C2536" flood-opacity="0.3" />
+    </filter>
+  </defs>
+  <!-- Background circle/rounded shape with vinotinto gradient -->
+  <rect width="48" height="48" rx="12" fill="url(#glossGrad)" />
+  <!-- Gloss & Growth stylized 'GG' / Spark Emblem -->
+  <g filter="url(#glow)" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer Arc / G1 -->
+    <path d="M 28 14 C 20 12 12 18 12 26 C 12 34 20 38 28 36 C 33 34.5 35 30 35 26 L 24 26" stroke-width="3.5" />
+    <!-- Inner Spark / Growth Arrow or Accent -->
+    <circle cx="36" cy="13" r="3.5" fill="url(#accentGrad)" stroke="none" />
+    <path d="M 36 7 L 36 10 M 36 16 L 36 19 M 30 13 L 33 13 M 39 13 L 42 13" stroke="#FDA4AF" stroke-width="1.5" />
+  </g>
+</svg>
