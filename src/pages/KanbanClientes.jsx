@@ -86,7 +86,7 @@ export default function KanbanClientes() {
       try {
         const [resClientes, resCatalogo] = await Promise.all([
           supabase.from('clientes').select('*').order('created_at', { ascending: false }),
-          supabase.from('catalogo_servicios').select('id, servicio, categoria').order('servicio', { ascending: true })
+          supabase.from('catalogo_servicios').select('id, nombre, categoria').order('nombre', { ascending: true })
         ]);
         
         if (resCatalogo.data) {
@@ -504,7 +504,7 @@ export default function KanbanClientes() {
                   <select value={leadForm.interes} onChange={e=>setLeadForm({...leadForm, interes: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900">
                     <option value="">Seleccione un servicio...</option>
                     {catalogo.map(svc => (
-                      <option key={svc.id} value={svc.servicio}>{svc.servicio} ({svc.categoria})</option>
+                      <option key={svc.id} value={svc.nombre}>{svc.nombre} ({svc.categoria})</option>
                     ))}
                   </select>
                 </div>
