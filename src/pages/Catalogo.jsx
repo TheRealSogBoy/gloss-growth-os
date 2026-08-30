@@ -104,14 +104,6 @@ const ICON_MAP = {
   Megaphone, Share2, Monitor, LayoutTemplate, Map, Briefcase,
 };
 
-// Contador correlativo persistente
-const getNextQuoteNumber = () => {
-  let counter = parseInt(localStorage.getItem('gg_quote_counter') || '1000', 10);
-  counter += 1;
-  localStorage.setItem('gg_quote_counter', counter.toString());
-  return counter;
-};
-
 const fmt = (v) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v ?? 0);
 
@@ -119,6 +111,20 @@ const fmt = (v) =>
 // GENERADOR DE PDF  — jsPDF + jspdf-autotable (100% datos en memoria, sin DOM)
 // ─────────────────────────────────────────────────────────────────────────────
 async function generarPDF({ cliente, cart, terminos, total, agencia }) {
+  // Obtener número consecutivo dinámico desde Supabase
+  let nextNum = 1001;
+  try {
+    const { data, error } = await supabase.rpc('get_next_cotizacion_number');
+    if (error) throw error;
+    nextNum = data;
+  } catch (err) {
+    console.warn('Fallback a localStorage para consecutivo:', err);
+    let counter = parseInt(localStorage.getItem('gg_quote_counter') || '1000', 10);
+    counter += 1;
+    localStorage.setItem('gg_quote_counter', counter.toString());
+    nextNum = counter;
+  }
+  
   // Importación dinámica (lazy). Solo se carga cuando el usuario pulsa "Descargar".
   const [{ jsPDF }, autoTableMod] = await Promise.all([
     import('jspdf'),
@@ -132,7 +138,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   const W   = doc.internal.pageSize.getWidth();
   const M   = 15;      // margen lateral
   const CW  = W - M * 2; // ancho útil
-  const NUM = String(getNextQuoteNumber());
+  const NUM = String(nextNum);
   const fechaEmision   = new Date();
   const fechaVencimiento = new Date(Date.now() + 15 * 86400000);
   const fmtDate = (d) => d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -173,18 +179,26 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
         reader.readAsDataURL(blob);
       }));
     
+    // Calcular proporciones dinámicas (Aspect Ratio)
+    const imgProps = doc.getImageProperties(logoBase64);
+    const aspect = imgProps.height / imgProps.width;
+    
     // Ancho max: 4.5 cm (45mm).
-    doc.addImage(logoBase64, 'PNG', M, y, 45, 12, undefined, 'FAST');
+    const logoW = 45;
+    const logoH = logoW * aspect;
+    doc.addImage(logoBase64, 'PNG', M, y, logoW, logoH, undefined, 'FAST');
     
     // Marca de agua (opcional si jsPDF soporta GState)
     if (typeof doc.GState === 'function') {
       doc.saveGraphicsState();
       doc.setGState(new doc.GState({opacity: 0.05}));
-      doc.addImage(logoBase64, 'PNG', (W - 140) / 2, (doc.internal.pageSize.getHeight() - 35) / 2, 140, 35, undefined, 'FAST');
+      const wmWidth = 140;
+      const wmHeight = wmWidth * aspect;
+      doc.addImage(logoBase64, 'PNG', (W - wmWidth) / 2, (doc.internal.pageSize.getHeight() - wmHeight) / 2, wmWidth, wmHeight, undefined, 'FAST');
       doc.restoreGraphicsState();
     }
     
-    y += 18; // Desplazar cursor
+    y += Math.max(logoH + 6, 18); // Desplazar cursor respetando alto del logo
   } catch (error) {
     console.warn('Error cargando el logo, usando fallback de texto', error);
     doc.setFont('helvetica', 'bold');
