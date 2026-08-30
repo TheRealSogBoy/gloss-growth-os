@@ -459,6 +459,60 @@ export default function KanbanClientes() {
           </div>
         </div>
       )}
+
+      {/* LEAD MODAL RÁPIDO */}
+      {showLeadModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLeadModal(false)}>
+          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-lg p-6 shadow-xl border border-gray-200 dark:border-gray-800" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-zodiak font-bold mb-4">Registro Rápido de Prospecto</h3>
+            <form onSubmit={handleSaveLead} className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">Clínica / Estética *</label>
+                <input required value={leadForm.nombre_clinica} onChange={e=>setLeadForm({...leadForm, nombre_clinica: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Nombre comercial"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm mb-1">Nombre Contacto *</label>
+                  <input required value={leadForm.nombre_contacto} onChange={e=>setLeadForm({...leadForm, nombre_contacto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Dr. o Dra."/>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">WhatsApp / Teléfono *</label>
+                  <input required value={leadForm.telefono} onChange={e=>setLeadForm({...leadForm, telefono: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="+57..."/>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm mb-1">Servicio de Interés</label>
+                  <input value={leadForm.interes} onChange={e=>setLeadForm({...leadForm, interes: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Ej: Pauta Ads"/>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Valor Estimado</label>
+                  <input type="number" min="0" value={leadForm.valor} onChange={e=>setLeadForm({...leadForm, valor: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm mb-1">Columna Inicial</label>
+                  <select value={leadForm.columna} onChange={e=>setLeadForm({...leadForm, columna: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900">
+                    <option>Prospecto</option>
+                    <option>Llamada / Reunión Agendada</option>
+                    <option>Interesado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Próxima Acción (Fecha)</label>
+                  <input type="date" value={leadForm.fecha_accion} onChange={e=>setLeadForm({...leadForm, fecha_accion: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={()=>setShowLeadModal(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
+                <button type="submit" className="flex-1 py-2 rounded-lg bg-gloss-burgundy text-white font-medium">Crear Prospecto</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
