@@ -158,11 +158,13 @@ export default function Calendario() {
         // 3. Reuniones
         const notas = cl.notas_kanban || {};
         if (notas.fechaCita) {
+            const loc = cl.direccion_cita || notas.direccion_cita;
+            const desc = (notas.tipoCita || 'Cita') + (loc ? ` - 📍 ${loc}` : '');
             all.push({
                 id: `cita_${cl.id}`,
                 type: 'reunion',
                 title: `📞 Reunión: ${cl.negocio_nombre}`,
-                description: notas.tipoCita || 'Cita',
+                description: desc,
                 date: notas.fechaCita,
                 origin: '/kanban-clientes',
                 cliente: cl.negocio_nombre

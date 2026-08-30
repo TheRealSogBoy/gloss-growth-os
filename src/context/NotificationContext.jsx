@@ -10,10 +10,10 @@ export function NotificationProvider({ children }) {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      // First run automated generation check for today's events
+      // 1. Run automated generation check for today's events
       await generarNotificacionesAutomaticas();
 
-      // Fetch from Supabase
+      // 2. Fetch from Supabase ordered strictly by created_at DESC
       const { data, error } = await supabase
         .from('notificaciones')
         .select('*')
@@ -33,10 +33,41 @@ export function NotificationProvider({ children }) {
   useEffect(() => {
     fetchNotifications();
 
-    // Set up interval check every 2 minutes
-    const interval = setInterval(fetchNotifications, 120000);
+    // Set up polling fallback interval check every 60 seconds
+    const interval = setInterval(fetchNotifications, 60000);
 
-    return () => clearInterval(interval);
+    // Setup Supabase Realtime channel for instant team-wide updates
+    const channel = supabase
+      .channel('notificaciones_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notificaciones' },
+        (payload) => {
+          if (payload.new) {
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === payload.new.id)) return prev;
+              return [payload.new, ...prev];
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notificaciones' },
+        (payload) => {
+          if (payload.new) {
+            setNotifications((prev) =>
+              prev.map((n) => (n.id === payload.new.id ? payload.new : n))
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, [fetchNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.leido).length;
@@ -67,6 +98,32 @@ export function NotificationProvider({ children }) {
     }
   };
 
+  const crearNotificacion = async ({ titulo, mensaje, tipo = 'sistema', enlace = '/' }) => {
+    try {
+      const payload = {
+        titulo: titulo.trim(),
+        mensaje: mensaje.trim(),
+        tipo,
+        enlace,
+        leido: false,
+      };
+      const { data, error } = await supabase
+        .from('notificaciones')
+        .insert([payload])
+        .select();
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setNotifications((prev) => [data[0], ...prev]);
+        return { success: true, data: data[0] };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('Error creating notification:', err);
+      return { error: err.message || 'Error al crear la notificación' };
+    }
+  };
+
   const value = {
     notifications,
     loading,
@@ -74,6 +131,7 @@ export function NotificationProvider({ children }) {
     fetchNotifications,
     marcarComoLeida,
     marcarTodasComoLeidas,
+    crearNotificacion,
   };
 
   return (

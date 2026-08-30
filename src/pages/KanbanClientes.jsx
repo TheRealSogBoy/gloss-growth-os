@@ -20,9 +20,9 @@ const formatCurrency = (val, divisa = 'COP') => {
 // Helpers de insignias visuales
 const getMeetingBadgeInfo = (tipoCita) => {
   switch (tipoCita) {
-    case 'Llamada': return { color: 'bg-blue-100 text-blue-700 border-blue-200', icon: Phone };
-    case 'Reunión Presencial': return { color: 'bg-purple-100 text-purple-700 border-purple-200', icon: MapPin };
-    case 'Reunión Virtual Meet': return { color: 'bg-green-100 text-green-700 border-green-200', icon: Video };
+    case 'Llamada': return { color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800', icon: Phone };
+    case 'Reunión Presencial': return { color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800', icon: MapPin };
+    case 'Reunión Virtual Meet': return { color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/60 dark:text-green-300 dark:border-green-800', icon: Video };
     default: return null;
   }
 };
@@ -52,6 +52,11 @@ const mapToKanbanForm = (row = {}) => {
     columna = 'Inactivo';
   }
 
+  const notas = row.notas_kanban && typeof row.notas_kanban === 'object' ? { ...row.notas_kanban } : {};
+  if (row.direccion_cita && !notas.direccion_cita) {
+    notas.direccion_cita = row.direccion_cita;
+  }
+
   return {
     id: row.id,
     negocio: {
@@ -66,8 +71,9 @@ const mapToKanbanForm = (row = {}) => {
       estadoContrato: columna,
       modeloComercial: row.contrato_esquema || 'Fijo Mensual'
     },
+    direccion_cita: row.direccion_cita || notas.direccion_cita || '',
     estado_contrato: columna,
-    notas: row.notas_kanban && typeof row.notas_kanban === 'object' ? row.notas_kanban : {}
+    notas: notas
   };
 };
 
@@ -97,7 +103,8 @@ export default function KanbanClientes() {
     instagram: '', 
     tiktok: '', 
     sitio_web: '', 
-    google: '' 
+    google: '',
+    direccion_cita: ''
   });
 
   useEffect(() => {
@@ -148,18 +155,28 @@ export default function KanbanClientes() {
       enlaces: enlacesGenerados,
       contrato_notas: `Interés: ${(leadForm.interes || []).join(', ')}. Próxima acción: ${leadForm.fecha_accion}`,
       contrato_valor: Number(leadForm.valor) || 0,
-      estado_contrato: leadForm.columna
+      estado_contrato: leadForm.columna,
+      direccion_cita: leadForm.direccion_cita || null,
+      notas_kanban: {
+        direccion_cita: leadForm.direccion_cita || ''
+      }
     };
 
     try {
-      const { data, error } = await supabase.from('clientes').insert([payload]).select();
+      let { data, error } = await supabase.from('clientes').insert([payload]).select();
+      if (error && error.message?.includes('direccion_cita')) {
+        delete payload.direccion_cita;
+        const retry = await supabase.from('clientes').insert([payload]).select();
+        data = retry.data;
+        error = retry.error;
+      }
       if (error) throw error;
 
       if (data && data.length > 0) {
         setClientes([mapToKanbanForm(data[0]), ...clientes]);
         logAuditoria(user, 'Pipeline Comercial', 'CREAR', `Nuevo prospecto agregado: ${payload.negocio_nombre}`);
         setShowLeadModal(false);
-        setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' });
+        setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '', direccion_cita: '' });
       }
     } catch (error) {
       console.error('Error insertando cliente:', error);
@@ -239,7 +256,14 @@ export default function KanbanClientes() {
         estado_contrato: updated.contrato?.estadoContrato || updated.estado_contrato,
         notas_kanban: updated.notas || {}
       };
-      await supabase.from('clientes').update(payload).eq('id', updated.id);
+      if (updated.direccion_cita !== undefined) {
+        payload.direccion_cita = updated.direccion_cita;
+      }
+      const { error } = await supabase.from('clientes').update(payload).eq('id', updated.id);
+      if (error && error.message?.includes('direccion_cita')) {
+        delete payload.direccion_cita;
+        await supabase.from('clientes').update(payload).eq('id', updated.id);
+      }
     } catch (err) {
       console.error('Error persistiendo notas kanban:', err);
     }
@@ -252,7 +276,14 @@ export default function KanbanClientes() {
           estado_contrato: selectedCliente.contrato?.estadoContrato || selectedCliente.estado_contrato,
           notas_kanban: selectedCliente.notas || {}
         };
-        await supabase.from('clientes').update(payload).eq('id', selectedCliente.id);
+        if (selectedCliente.direccion_cita !== undefined) {
+          payload.direccion_cita = selectedCliente.direccion_cita;
+        }
+        const { error } = await supabase.from('clientes').update(payload).eq('id', selectedCliente.id);
+        if (error && error.message?.includes('direccion_cita')) {
+          delete payload.direccion_cita;
+          await supabase.from('clientes').update(payload).eq('id', selectedCliente.id);
+        }
         logAuditoria(user, 'Pipeline Comercial', 'EDITAR', `Notas guardadas para ${selectedCliente.negocio?.nombre}`);
       } catch (err) {
         console.error('Error guardando modal de cliente:', err);
@@ -273,7 +304,7 @@ export default function KanbanClientes() {
         <div className="flex flex-col sm:flex-row gap-3 items-center">
           <button 
             onClick={() => { 
-              setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' }); 
+              setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '', direccion_cita: '' }); 
               setShowLeadModal(true); 
             }} 
             className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-gloss-burgundy/90 transition-all flex items-center gap-2 shadow-md whitespace-nowrap"
@@ -343,10 +374,10 @@ export default function KanbanClientes() {
                         <div className="relative z-10 pointer-events-none">
                           <div className="flex justify-between items-start mb-2">
                             <div className="flex items-center gap-2 text-gloss-burgundy dark:text-gloss-pink">
-                              <Building2 size={16}/>
+                              <Building2 size={16} className="flex-shrink-0"/>
                               <span className="font-bold text-sm truncate max-w-[200px]">{c?.negocio?.nombre || 'Sin nombre'}</span>
                             </div>
-                            <GripVertical size={16} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"/>
+                            <GripVertical size={16} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"/>
                           </div>
                           
                           <div className="flex items-center justify-between mb-3">
@@ -354,7 +385,7 @@ export default function KanbanClientes() {
                               {c?.negocio?.categoria || 'Sin categoría'}
                             </span>
                             <span className="flex items-center gap-1 text-[10px] font-medium text-gray-500">
-                              <MapPin size={10}/> {c?.negocio?.ciudad || 'N/A'}
+                              <MapPin size={10} className="flex-shrink-0"/> {c?.negocio?.ciudad || 'N/A'}
                             </span>
                           </div>
 
@@ -362,30 +393,39 @@ export default function KanbanClientes() {
                           <div className="space-y-1.5 mb-3">
                             {meetingBadge && (
                               <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg border ${meetingBadge.color}`}>
-                                <meetingBadge.icon size={12}/> 
-                                {c?.notas?.tipoCita} {c?.notas?.fechaCita ? `- ${new Date(c.notas.fechaCita).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+                                <meetingBadge.icon size={12} className="flex-shrink-0"/> 
+                                <span className="truncate">
+                                  {c?.notas?.tipoCita} {c?.notas?.fechaCita ? `- ${new Date(c.notas.fechaCita).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}` : ''}
+                                </span>
                               </div>
                             )}
                             
+                            {c?.notas?.tipoCita === 'Reunión Presencial' && (c?.notas?.direccion_cita || c?.direccion_cita) && (
+                              <div className="flex items-center gap-1.5 text-[10px] font-medium px-2 py-0.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-900/40">
+                                <MapPin size={11} className="flex-shrink-0 text-purple-600 dark:text-purple-400" />
+                                <span className="truncate">{c?.notas?.direccion_cita || c?.direccion_cita}</span>
+                              </div>
+                            )}
+
                             {remarketingStatus && (
                               <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-lg border ${remarketingStatus.color}`}>
-                                <remarketingStatus.icon size={12}/> 
-                                {remarketingStatus.text}
+                                <remarketingStatus.icon size={12} className="flex-shrink-0"/> 
+                                <span className="truncate">{remarketingStatus.text}</span>
                               </div>
                             )}
                           </div>
 
                           <div className="space-y-2 mb-4 mt-2">
                             <div className="flex items-center justify-between text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900/50 px-3 py-2 rounded-xl border border-gray-100 dark:border-gray-800">
-                              <div className="flex items-center gap-2">
-                                <User size={13} className="text-gray-400"/>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <User size={13} className="text-gray-400 flex-shrink-0"/>
                                 <span className="truncate font-medium">{c?.contactos?.[0]?.nombre || 'Sin contacto'}</span>
                               </div>
                             </div>
                             
                             <div className="flex items-center justify-between text-xs text-gray-700 dark:text-gray-300 bg-green-50/50 dark:bg-green-900/10 px-3 py-2 rounded-xl border border-green-100 dark:border-green-900/30">
                               <div className="flex items-center gap-2">
-                                <DollarSign size={13} className="text-green-600 dark:text-green-500"/>
+                                <DollarSign size={13} className="text-green-600 dark:text-green-500 flex-shrink-0"/>
                                 <span className="font-bold text-green-700 dark:text-green-400">{formatCurrency(c?.contrato?.valor, c?.contrato?.divisa)}</span>
                               </div>
                             </div>
@@ -471,13 +511,13 @@ export default function KanbanClientes() {
                 <div className="border border-gray-200 dark:border-gray-800 rounded-2xl p-4 bg-gray-50 dark:bg-gray-900/50">
                   <h4 className="text-[11px] font-bold text-gray-500 uppercase mb-3 flex items-center gap-1.5"><Calendar size={13}/> Agendamiento de Citas</h4>
                   
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
                       <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 block">Tipo de Cita</label>
                       <select 
                         value={selectedCliente?.notas?.tipoCita || 'Ninguna'}
                         onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), tipoCita: e.target.value }})}
-                        className="w-full text-xs p-2 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-bold"
+                        className="w-full text-xs p-2.5 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-bold cursor-pointer"
                       >
                         <option>Ninguna</option>
                         <option>Llamada</option>
@@ -491,21 +531,77 @@ export default function KanbanClientes() {
                         type="datetime-local" 
                         value={selectedCliente?.notas?.fechaCita || ''}
                         onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), fechaCita: e.target.value }})}
-                        className="w-full text-xs p-2 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
+                        className="w-full text-xs p-2.5 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
                       />
                     </div>
                   </div>
 
+                  {/* Campo Dinámico: Llamada (Input con padding y alineación limpia) */}
+                  {selectedCliente?.notas?.tipoCita === 'Llamada' && (
+                    <div className="mt-3 animate-fade-in">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1.5">
+                        <Phone size={12} className="flex-shrink-0 text-blue-600 dark:text-blue-400"/> Número de Teléfono / WhatsApp
+                      </label>
+                      <div className="relative flex items-center w-full">
+                        <div className="absolute left-3 flex items-center justify-center pointer-events-none text-blue-600 dark:text-blue-400">
+                          <Phone size={14} className="flex-shrink-0" />
+                        </div>
+                        <input 
+                          type="tel" 
+                          placeholder="Ej. +57 314 590 4933"
+                          value={selectedCliente?.notas?.telefonoLlamada || selectedCliente?.contactos?.[0]?.telefono || ''}
+                          onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), telefonoLlamada: e.target.value }})}
+                          className="w-full text-xs pl-9 pr-3 py-2.5 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campo Dinámico: Reunión Presencial (Dirección / Ubicación) */}
+                  {selectedCliente?.notas?.tipoCita === 'Reunión Presencial' && (
+                    <div className="mt-3 animate-fade-in">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1.5">
+                        <MapPin size={12} className="flex-shrink-0 text-purple-600 dark:text-purple-400"/> Dirección / Ubicación
+                      </label>
+                      <div className="relative flex items-center w-full">
+                        <div className="absolute left-3 flex items-center justify-center pointer-events-none text-purple-600 dark:text-purple-400">
+                          <MapPin size={14} className="flex-shrink-0" />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="Ej. Edificio Empresarial, Oficina 302"
+                          value={selectedCliente?.direccion_cita || selectedCliente?.notas?.direccion_cita || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            updateSelected({ 
+                              direccion_cita: val,
+                              notas: { ...(selectedCliente?.notas || {}), direccion_cita: val }
+                            });
+                          }}
+                          className="w-full text-xs pl-9 pr-3 py-2.5 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campo Dinámico: Reunión Virtual Meet */}
                   {selectedCliente?.notas?.tipoCita === 'Reunión Virtual Meet' && (
-                    <div className="mt-2">
-                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1"><Video size={11}/> Enlace de Meet / Zoom</label>
-                      <input 
-                        type="url" 
-                        placeholder="https://meet.google.com/..."
-                        value={selectedCliente?.notas?.enlaceReunion || ''}
-                        onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), enlaceReunion: e.target.value }})}
-                        className="w-full text-xs p-2 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
-                      />
+                    <div className="mt-3 animate-fade-in">
+                      <label className="text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1.5">
+                        <Video size={12} className="flex-shrink-0 text-green-600 dark:text-green-400"/> Enlace de Meet / Zoom
+                      </label>
+                      <div className="relative flex items-center w-full">
+                        <div className="absolute left-3 flex items-center justify-center pointer-events-none text-green-600 dark:text-green-400">
+                          <Video size={14} className="flex-shrink-0" />
+                        </div>
+                        <input 
+                          type="url" 
+                          placeholder="https://meet.google.com/..."
+                          value={selectedCliente?.notas?.enlaceReunion || ''}
+                          onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), enlaceReunion: e.target.value }})}
+                          className="w-full text-xs pl-9 pr-3 py-2.5 border rounded-xl bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium text-gray-900 dark:text-white"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -521,7 +617,7 @@ export default function KanbanClientes() {
                         type="date" 
                         value={selectedCliente?.notas?.fechaRemarketing || ''}
                         onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), fechaRemarketing: e.target.value }})}
-                        className="w-full text-xs p-2 border rounded-xl bg-white dark:bg-gray-800 border-red-200 dark:border-red-800 focus:ring-1 focus:ring-red-500 text-red-900 dark:text-red-100 font-medium"
+                        className="w-full text-xs p-2.5 border rounded-xl bg-white dark:bg-gray-800 border-red-200 dark:border-red-800 focus:ring-1 focus:ring-red-500 text-red-900 dark:text-red-100 font-medium"
                       />
                     </div>
                     <div>
@@ -531,7 +627,7 @@ export default function KanbanClientes() {
                         value={selectedCliente?.notas?.notaRemarketing || ''}
                         onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), notaRemarketing: e.target.value }})}
                         placeholder="Ej. Escribir para enviar propuesta PDF..."
-                        className="w-full text-xs p-2 border rounded-xl bg-white dark:bg-gray-800 border-red-200 dark:border-red-800 focus:ring-1 focus:ring-red-500 text-red-900 dark:text-red-100 font-medium"
+                        className="w-full text-xs p-2.5 border rounded-xl bg-white dark:bg-gray-800 border-red-200 dark:border-red-800 focus:ring-1 focus:ring-red-500 text-red-900 dark:text-red-100 font-medium"
                       />
                     </div>
                   </div>
@@ -544,7 +640,7 @@ export default function KanbanClientes() {
                     value={selectedCliente?.notas?.texto || ''}
                     onChange={e => updateSelected({ notas: { ...(selectedCliente?.notas || {}), texto: e.target.value }})}
                     placeholder="Escribe detalles del prospecto, presupuestos conversados..."
-                    className="w-full text-xs sm:text-sm p-3 border rounded-2xl bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy min-h-[85px] outline-none resize-y"
+                    className="w-full text-xs sm:text-sm p-3 border rounded-2xl bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-gloss-burgundy min-h-[85px] outline-none resize-y text-gray-900 dark:text-white"
                   />
                 </div>
               </div>
