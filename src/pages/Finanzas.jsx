@@ -28,14 +28,15 @@ export default function Finanzas() {
       try {
         
           // Obtener de todas las tablas (retrocompatibilidad) y de transacciones_finanzas
-          const [ing, gas, gf, tdc, deu, ret, tf] = await Promise.all([
+          const [ing, gas, gf, tdc, deu, ret, tf, cl] = await Promise.all([
             supabase.from('finanzas_ingresos').select('*'),
             supabase.from('finanzas_gastos').select('*'),
             supabase.from('finanzas_gastos_fijos').select('*'),
             supabase.from('finanzas_compras_tdc').select('*'),
             supabase.from('finanzas_deudas').select('*'),
             supabase.from('finanzas_retiros').select('*'),
-            supabase.from('transacciones_finanzas').select('*')
+            supabase.from('transacciones_finanzas').select('*'),
+            supabase.from('clientes').select('*')
           ]);
           
           const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
@@ -44,7 +45,7 @@ export default function Finanzas() {
           const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
           const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
           const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
-          const mapTfIngreso = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
+          const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
           const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia' });
 
           let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
@@ -55,6 +56,34 @@ export default function Finanzas() {
              const tfGastos = tf.data.filter(t => t.tipo === 'gasto').map(mapTfGasto);
              fetchedIngresos = [...fetchedIngresos, ...tfIngresos];
              fetchedGastos = [...fetchedGastos, ...tfGastos];
+          }
+
+          // --- SINCRONIZACIÓN AUTOMÁTICA DE CLIENTES ---
+          if (cl.data) {
+            cl.data.forEach(cliente => {
+              const planPagos = cliente.contrato?.planPagos || [];
+              const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
+              const isPagado100 = planPagos.length > 0 && cuotasPendientes.length === 0;
+
+              if (isPagado100 && cliente.contrato?.valor) {
+                // Verificar si ya existe en fetchedIngresos
+                // (buscando por cliente_id o por coincidencia de descripción)
+                const hasTx = fetchedIngresos.some(i => i.cliente_id === cliente.id || (i.concepto && i.concepto.includes(cliente.negocio?.nombre)));
+                
+                if (!hasTx) {
+                  // Agregar transacción virtual al estado para que sume
+                  fetchedIngresos.push({
+                    id: 'virtual_' + cliente.id,
+                    cliente_id: cliente.id,
+                    concepto: `Pago suscripción - ${cliente.negocio?.nombre}`,
+                    cliente: 'Directorio (Virtual)',
+                    tipo: 'Operativo',
+                    monto: Number(cliente.contrato.valor) || 0,
+                    fecha: new Date().toISOString().split('T')[0]
+                  });
+                }
+              }
+            });
           }
 
           setIngresos(fetchedIngresos);

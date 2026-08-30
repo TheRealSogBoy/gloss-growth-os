@@ -268,29 +268,11 @@ export default function Directorio() {
   const handleSave = async (e) => {
     e.preventDefault();
     const payload = mapToRow(form);
-      try {
-        if (isEditMode) {
-          
-          // --- AUTOMATIZACION FINANZAS ---
-          if (selectedClient && selectedClient.contrato?.planPagos && form.contrato?.planPagos) {
-            for (const cuota of form.contrato.planPagos) {
-              const oldCuota = selectedClient.contrato.planPagos.find(c => c.id === cuota.id);
-              if (oldCuota && oldCuota.estado !== 'Pagado' && cuota.estado === 'Pagado') {
-                await supabase.from('transacciones_finanzas').insert([{
-                  cliente_id: form.id,
-                  tipo: 'ingreso',
-                  categoria: 'pago_cuota',
-                  monto: cuota.monto,
-                  fecha_pago: new Date().toISOString().split('T')[0],
-                  estado: 'completado',
-                  descripcion: `Pago de cuota: ${form.negocio?.nombre}`
-                }]);
-              }
-            }
-          }
-          // --- FIN AUTOMATIZACION ---
-
-          const { data, error } = await supabase.from('clientes').update(payload).eq('id', form.id).select();
+    try {
+      let savedClientId = form.id;
+      
+      if (isEditMode) {
+        const { data, error } = await supabase.from('clientes').update(payload).eq('id', form.id).select();
         if (error) throw error;
         if (data && data.length > 0) {
           const updated = mapToForm(data[0]);
@@ -303,8 +285,38 @@ export default function Directorio() {
         if (data && data.length > 0) {
           const inserted = mapToForm(data[0]);
           setClientes([inserted, ...clientes]);
+          savedClientId = inserted.id;
         }
       }
+
+      // --- AUTOMATIZACION FINANZAS (Estatus Pagado al 100%) ---
+      const planPagos = form.contrato?.planPagos || [];
+      const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
+      const isPagado100 = planPagos.length > 0 ? cuotasPendientes.length === 0 : true;
+
+      if (isPagado100 && form.contrato?.valor && savedClientId) {
+        // Verificar si ya existe el registro de pago para este cliente
+        const { data: existingTx } = await supabase
+          .from('transacciones_finanzas')
+          .select('id')
+          .eq('cliente_id', savedClientId)
+          .eq('categoria', 'Suscripción Recurrente')
+          .limit(1);
+
+        if (!existingTx || existingTx.length === 0) {
+          await supabase.from('transacciones_finanzas').insert([{
+            cliente_id: savedClientId,
+            tipo: 'ingreso',
+            categoria: 'Suscripción Recurrente',
+            monto: Number(form.contrato.valor) || 0,
+            fecha_pago: new Date().toISOString().split('T')[0],
+            estado: 'completado',
+            descripcion: `Pago suscripción - ${form.negocio?.nombre}`
+          }]);
+        }
+      }
+      // --- FIN AUTOMATIZACION ---
+
       setIsModalOpen(false);
     } catch(err) {
       console.error('Error saving client:', err);
