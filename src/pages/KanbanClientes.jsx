@@ -75,15 +75,25 @@ export default function KanbanClientes() {
   const navigate = useNavigate();
   
   const [clientes, setClientes] = useState([]);
-  const [loadingClientes, setLoadingClientes] = useState(true);
+    const [catalogo, setCatalogo] = useState([]);
+    const [loadingClientes, setLoadingClientes] = useState(true);
 
   useEffect(() => {
     fetchClientes();
   }, []);
 
   const fetchClientes = async () => {
-    try {
-      const { data, error } = await supabase.from('clientes').select('*').order('created_at', { ascending: false });
+      try {
+        const [resClientes, resCatalogo] = await Promise.all([
+          supabase.from('clientes').select('*').order('created_at', { ascending: false }),
+          supabase.from('catalogo_servicios').select('id, servicio, categoria').order('servicio', { ascending: true })
+        ]);
+        
+        if (resCatalogo.data) {
+          setCatalogo(resCatalogo.data);
+        }
+
+        const { data, error } = resClientes;
       if (error) throw error;
       if (data) {
         setClientes(data.map(mapToKanbanForm));
@@ -103,13 +113,21 @@ export default function KanbanClientes() {
   // Modal
   const [selectedCliente, setSelectedCliente] = useState(null);
     const [showLeadModal, setShowLeadModal] = useState(false);
-    const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto' });
+    const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' });
 
     const handleSaveLead = async (e) => {
       e.preventDefault();
+      const enlacesGenerados = [];
+      if (leadForm.facebook) enlacesGenerados.push({ red: 'Facebook', url: leadForm.facebook });
+      if (leadForm.instagram) enlacesGenerados.push({ red: 'Instagram', url: leadForm.instagram });
+      if (leadForm.tiktok) enlacesGenerados.push({ red: 'TikTok', url: leadForm.tiktok });
+      if (leadForm.sitio_web) enlacesGenerados.push({ red: 'Sitio Web', url: leadForm.sitio_web });
+      if (leadForm.google) enlacesGenerados.push({ red: 'Perfil de Google', url: leadForm.google });
+
       const payload = {
         negocio_nombre: leadForm.nombre_clinica,
         contactos: [{ nombre: leadForm.nombre_contacto, telefono: leadForm.telefono, rol: 'Prospecto' }],
+        enlaces: enlacesGenerados,
         contrato_notas: `Interés: ${leadForm.interes}. Próxima acción: ${leadForm.fecha_accion}`,
         contrato_valor: leadForm.valor,
         etapa_comercial: leadForm.columna,
@@ -176,7 +194,7 @@ export default function KanbanClientes() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-          <button onClick={() => { setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto' }); setShowLeadModal(true); }} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
+          <button onClick={() => { setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' }); setShowLeadModal(true); }} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
               <Plus size={16}/> Nuevo Prospecto
             </button>
           <div className="relative">
@@ -350,7 +368,7 @@ export default function KanbanClientes() {
                 </div>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
                 <div className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
                   <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2"><User size={14}/> Contacto Principal</h4>
                   <p className="font-bold text-gray-900 dark:text-white mb-2">{selectedCliente.contactos?.[0]?.nombre}</p>
@@ -463,9 +481,9 @@ export default function KanbanClientes() {
       {/* LEAD MODAL RÁPIDO */}
       {showLeadModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowLeadModal(false)}>
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-lg p-6 shadow-xl border border-gray-200 dark:border-gray-800" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-xl p-6 shadow-xl border border-gray-200 dark:border-gray-800" onClick={e => e.stopPropagation()}>
             <h3 className="text-xl font-zodiak font-bold mb-4">Registro Rápido de Prospecto</h3>
-            <form onSubmit={handleSaveLead} className="space-y-4">
+            <form onSubmit={handleSaveLead} className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
               <div>
                 <label className="block text-sm mb-1">Clínica / Estética *</label>
                 <input required value={leadForm.nombre_clinica} onChange={e=>setLeadForm({...leadForm, nombre_clinica: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Nombre comercial"/>
@@ -483,7 +501,12 @@ export default function KanbanClientes() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm mb-1">Servicio de Interés</label>
-                  <input value={leadForm.interes} onChange={e=>setLeadForm({...leadForm, interes: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Ej: Pauta Ads"/>
+                  <select value={leadForm.interes} onChange={e=>setLeadForm({...leadForm, interes: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900">
+                    <option value="">Seleccione un servicio...</option>
+                    {catalogo.map(svc => (
+                      <option key={svc.id} value={svc.servicio}>{svc.servicio} ({svc.categoria})</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm mb-1">Valor Estimado</label>
@@ -502,6 +525,35 @@ export default function KanbanClientes() {
                 <div>
                   <label className="block text-sm mb-1">Próxima Acción (Fecha)</label>
                   <input type="date" value={leadForm.fecha_accion} onChange={e=>setLeadForm({...leadForm, fecha_accion: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/>
+                </div>
+              </div>
+              <div className="border-t border-gray-200 dark:border-gray-800 pt-4 mt-2">
+                <label className="block text-sm font-bold mb-3 text-gray-700 dark:text-gray-300">Enlaces y Redes (Opcional)</label>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs mb-1 text-gray-500">Instagram</label>
+                    <input value={leadForm.instagram} onChange={e=>setLeadForm({...leadForm, instagram: e.target.value})} className="w-full px-3 py-1.5 text-sm rounded-lg border dark:border-gray-700 bg-transparent" placeholder="@usuario o url"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1 text-gray-500">Facebook</label>
+                    <input value={leadForm.facebook} onChange={e=>setLeadForm({...leadForm, facebook: e.target.value})} className="w-full px-3 py-1.5 text-sm rounded-lg border dark:border-gray-700 bg-transparent" placeholder="url de la página"/>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs mb-1 text-gray-500">TikTok</label>
+                    <input value={leadForm.tiktok} onChange={e=>setLeadForm({...leadForm, tiktok: e.target.value})} className="w-full px-3 py-1.5 text-sm rounded-lg border dark:border-gray-700 bg-transparent" placeholder="@usuario o url"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs mb-1 text-gray-500">Sitio Web</label>
+                    <input value={leadForm.sitio_web} onChange={e=>setLeadForm({...leadForm, sitio_web: e.target.value})} className="w-full px-3 py-1.5 text-sm rounded-lg border dark:border-gray-700 bg-transparent" placeholder="https://..."/>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 mb-3">
+                  <div>
+                    <label className="block text-xs mb-1 text-gray-500">Perfil de Google</label>
+                    <input value={leadForm.google} onChange={e=>setLeadForm({...leadForm, google: e.target.value})} className="w-full px-3 py-1.5 text-sm rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Enlace de Google Maps / My Business"/>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 pt-2">
