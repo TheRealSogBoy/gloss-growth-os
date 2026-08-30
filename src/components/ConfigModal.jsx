@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Users, Building2, Plus, Trash2, Check, 
   Mail, Phone, Sparkles, ShieldCheck, KeyRound, Copy,
-  CheckCheck, Crown, RefreshCw, AlertCircle, Globe
+  CheckCheck, Crown, RefreshCw, AlertCircle, Globe,
+  Megaphone, Send, BellRing, AlertTriangle, Info, Clock
 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,9 +16,9 @@ export default function ConfigModal({ isOpen, onClose }) {
     updateDatosAgencia 
   } = useConfig();
 
-  const { user, isSuperAdmin } = useAuth();
+  const { user, perfil, isSuperAdmin } = useAuth();
 
-  const [activeTab, setActiveTab] = useState('miembros_db'); // 'miembros_db' | 'agencia'
+  const [activeTab, setActiveTab] = useState('miembros_db'); // 'miembros_db' | 'anuncios' | 'agencia'
   
   // Database-backed perfiles_usuarios list
   const [dbMembers, setDbMembers] = useState([]);
@@ -33,6 +34,17 @@ export default function ConfigModal({ isOpen, onClose }) {
   const [copiedCode, setCopiedCode] = useState(null);
   const [addError, setAddError] = useState('');
   const [lastCreatedInvitation, setLastCreatedInvitation] = useState(null);
+
+  // SuperAdmin Announcement Panel State
+  const [anuncioForm, setAnuncioForm] = useState({
+    titulo: '',
+    mensaje: '',
+    prioridad: 'Normal', // 'Normal' | 'Importante' | 'Urgente'
+  });
+  const [anuncioSending, setAnuncioSending] = useState(false);
+  const [anuncioSuccess, setAnuncioSuccess] = useState(false);
+  const [historialAnuncios, setHistorialAnuncios] = useState([]);
+  const [loadingAnuncios, setLoadingAnuncios] = useState(false);
 
   // Agency Form
   const [agenciaForm, setAgenciaForm] = useState({ ...datosAgencia });
@@ -60,14 +72,38 @@ export default function ConfigModal({ isOpen, onClose }) {
     }
   }, []);
 
+  const fetchHistorialAnuncios = useCallback(async () => {
+    setLoadingAnuncios(true);
+    try {
+      const { data, error } = await supabase
+        .from('notificaciones')
+        .select('*')
+        .in('tipo', ['anuncio', 'sistema', 'anuncio_urgente', 'anuncio_importante'])
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!error && data) {
+        setHistorialAnuncios(data);
+      }
+    } catch (err) {
+      console.error('Error fetching announcements:', err);
+    } finally {
+      setLoadingAnuncios(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       fetchDbMembers();
+      if (isSuperAdmin) {
+        fetchHistorialAnuncios();
+      }
       setAgenciaForm({ ...datosAgencia });
       setLastCreatedInvitation(null);
       setAddError('');
+      setAnuncioSuccess(false);
     }
-  }, [isOpen, fetchDbMembers, datosAgencia]);
+  }, [isOpen, fetchDbMembers, fetchHistorialAnuncios, datosAgencia, isSuperAdmin]);
 
   if (!isOpen) return null;
 
@@ -166,6 +202,81 @@ export default function ConfigModal({ isOpen, onClose }) {
     }
   };
 
+  // Enviar Anuncio a Todo el Equipo (SuperAdmin Exclusivo)
+  const handleEnviarAnuncio = async (e) => {
+    e.preventDefault();
+    if (!anuncioForm.titulo.trim() || !anuncioForm.mensaje.trim()) {
+      alert('Por favor completa el título y los detalles del anuncio.');
+      return;
+    }
+
+    setAnuncioSending(true);
+    setAnuncioSuccess(false);
+
+    const autorNombre = perfil?.nombre_completo || user?.user_metadata?.full_name || user?.email || 'SuperAdmin';
+    const tipoFinal = anuncioForm.prioridad === 'Urgente' 
+      ? 'anuncio_urgente' 
+      : anuncioForm.prioridad === 'Importante' 
+      ? 'anuncio_importante' 
+      : 'anuncio';
+
+    const tituloConPrioridad = anuncioForm.prioridad === 'Urgente'
+      ? `🚨 [URGENTE] ${anuncioForm.titulo.trim()}`
+      : anuncioForm.prioridad === 'Importante'
+      ? `📢 [IMPORTANTE] ${anuncioForm.titulo.trim()}`
+      : `📣 ${anuncioForm.titulo.trim()}`;
+
+    const payload = {
+      titulo: tituloConPrioridad,
+      mensaje: anuncioForm.mensaje.trim(),
+      tipo: tipoFinal,
+      enlace: '/',
+      leido: false,
+    };
+
+    try {
+      // Intentar insertar con campo autor si la tabla lo soporta
+      let { data, error } = await supabase.from('notificaciones').insert([{ ...payload, autor: autorNombre }]).select();
+      
+      if (error && error.message?.includes('autor')) {
+        // Si no existe la columna autor en la tabla, insertar payload estándar
+        const retry = await supabase.from('notificaciones').insert([payload]).select();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) throw error;
+
+      await logAuditoria(
+        user,
+        'Panel de Anuncios',
+        'CREAR',
+        `Anuncio emitido a todo el equipo: "${anuncioForm.titulo}" (Prioridad: ${anuncioForm.prioridad})`
+      );
+
+      setAnuncioSuccess(true);
+      setAnuncioForm({ titulo: '', mensaje: '', prioridad: 'Normal' });
+      fetchHistorialAnuncios();
+      setTimeout(() => setAnuncioSuccess(false), 4000);
+    } catch (err) {
+      console.error('Error al emitir anuncio:', err);
+      alert('Hubo un error al enviar el anuncio: ' + err.message);
+    } finally {
+      setAnuncioSending(false);
+    }
+  };
+
+  const handleDeleteAnuncio = async (id) => {
+    if (window.confirm('¿Eliminar este anuncio del historial de notificaciones?')) {
+      try {
+        await supabase.from('notificaciones').delete().eq('id', id);
+        setHistorialAnuncios(prev => prev.filter(a => a.id !== id));
+      } catch (err) {
+        console.error('Error deleting announcement:', err);
+      }
+    }
+  };
+
   const copyToClipboard = (text, id) => {
     navigator.clipboard.writeText(text);
     setCopiedCode(id);
@@ -201,7 +312,7 @@ export default function ConfigModal({ isOpen, onClose }) {
                 )}
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Control de acceso, gestión de miembros e identidad oficial de la agencia
+                Control de acceso, gestión de miembros, anuncios del equipo e identidad oficial
               </p>
             </div>
           </div>
@@ -214,22 +325,40 @@ export default function ConfigModal({ isOpen, onClose }) {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/20 px-6 pt-3 gap-3 flex-shrink-0">
+        <div className="flex border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/20 px-6 pt-3 gap-2 flex-shrink-0 overflow-x-auto custom-scrollbar">
           <button
             onClick={() => setActiveTab('miembros_db')}
-            className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold border-b-2 transition-all ${
+            className={`flex items-center gap-2 pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
               activeTab === 'miembros_db'
                 ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink'
                 : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
             }`}
           >
             <Users size={16} />
-            <span>Gestión de Miembros & Invitaciones ({dbMembers.length})</span>
+            <span>Miembros & Invitaciones ({dbMembers.length})</span>
           </button>
+
+          {/* SuperAdmin Exclusive Tab */}
+          {isSuperAdmin && (
+            <button
+              onClick={() => setActiveTab('anuncios')}
+              className={`flex items-center gap-2 pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
+                activeTab === 'anuncios'
+                  ? 'border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
+              }`}
+            >
+              <Megaphone size={16} className="text-amber-600 dark:text-amber-400" />
+              <span>Panel de Anuncios</span>
+              <span className="text-[9px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-1.5 py-0.2 rounded font-black uppercase">
+                Admin
+              </span>
+            </button>
+          )}
 
           <button
             onClick={() => setActiveTab('agencia')}
-            className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold border-b-2 transition-all ${
+            className={`flex items-center gap-2 pb-3 px-4 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all ${
               activeTab === 'agencia'
                 ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink'
                 : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
@@ -468,7 +597,157 @@ export default function ConfigModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* TAB 2: DATOS DE LA AGENCIA */}
+          {/* TAB 2: PANEL DE ANUNCIOS (EXCLUSIVO SUPERADMIN) */}
+          {activeTab === 'anuncios' && isSuperAdmin && (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                    Panel de Anuncios y Comunicados Oficiales
+                  </h3>
+                  <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+                    SuperAdmin
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Emite alertas prioritarias y notificaciones en tiempo real que se proyectarán en la campana de todos los miembros del equipo.
+                </p>
+              </div>
+
+              {anuncioSuccess && (
+                <div className="p-4 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 rounded-2xl text-xs text-green-800 dark:text-green-300 font-bold flex items-center gap-2.5 animate-scale-in">
+                  <CheckCircle2 size={18} className="text-green-600 dark:text-green-400 flex-shrink-0" />
+                  <span>¡Anuncio publicado y transmitido con éxito a todo el equipo de Gloss Growth OS!</span>
+                </div>
+              )}
+
+              {/* Formulario de Emisión */}
+              <form onSubmit={handleEnviarAnuncio} className="p-5 bg-gray-50/80 dark:bg-gray-900/50 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-gray-600 dark:text-gray-400 mb-1.5">
+                    Título del Anuncio *
+                  </label>
+                  <input 
+                    type="text"
+                    required
+                    value={anuncioForm.titulo}
+                    onChange={(e) => setAnuncioForm({ ...anuncioForm, titulo: e.target.value })}
+                    placeholder="Ej. Nueva Actualización: Directrices de entregables para clientes..."
+                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 font-bold outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold uppercase text-gray-600 dark:text-gray-400 mb-1.5">
+                      Detalles del Anuncio *
+                    </label>
+                    <textarea 
+                      required
+                      rows={3}
+                      value={anuncioForm.mensaje}
+                      onChange={(e) => setAnuncioForm({ ...anuncioForm, mensaje: e.target.value })}
+                      placeholder="Escribe el cuerpo del comunicado, indicaciones o fechas límite para el equipo..."
+                      className="w-full px-3.5 py-2.5 text-xs sm:text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 font-medium outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:text-white resize-y"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-gray-600 dark:text-gray-400 mb-1.5">
+                      Nivel de Prioridad
+                    </label>
+                    <select
+                      value={anuncioForm.prioridad}
+                      onChange={(e) => setAnuncioForm({ ...anuncioForm, prioridad: e.target.value })}
+                      className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer text-gray-900 dark:text-white"
+                    >
+                      <option value="Normal">Normal (Gris)</option>
+                      <option value="Importante">Importante (Azul)</option>
+                      <option value="Urgente">Urgente (Rojo)</option>
+                    </select>
+
+                    <div className="mt-3 p-2.5 rounded-xl border text-[11px] font-semibold flex items-center gap-1.5 ${
+                      anuncioForm.prioridad === 'Urgente'
+                        ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+                        : anuncioForm.prioridad === 'Importante'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                        : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+                    }">
+                      {anuncioForm.prioridad === 'Urgente' ? (
+                        <AlertTriangle size={13} className="text-red-600 flex-shrink-0" />
+                      ) : anuncioForm.prioridad === 'Importante' ? (
+                        <Info size={13} className="text-blue-600 flex-shrink-0" />
+                      ) : (
+                        <BellRing size={13} className="text-gray-500 flex-shrink-0" />
+                      )}
+                      <span>Vista previa: {anuncioForm.prioridad}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={anuncioSending}
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all shadow-md flex items-center gap-2 text-xs disabled:opacity-50"
+                  >
+                    <Send size={14} />
+                    <span>{anuncioSending ? 'Transmitiendo...' : 'Enviar a todo el equipo'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Historial de Anuncios Publicados */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Clock size={14} /> Historial de Anuncios Recientes
+                </h4>
+                <div className="border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden bg-white dark:bg-gloss-black divide-y divide-gray-100 dark:divide-gray-800 max-h-56 overflow-y-auto custom-scrollbar">
+                  {loadingAnuncios ? (
+                    <div className="p-6 text-center text-gray-400 text-xs">Cargando historial...</div>
+                  ) : historialAnuncios.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400 text-xs">No hay comunicados registrados aún.</div>
+                  ) : (
+                    historialAnuncios.map((item) => (
+                      <div key={item.id} className="p-3.5 flex items-start justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                              item.tipo === 'anuncio_urgente'
+                                ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300'
+                                : item.tipo === 'anuncio_importante'
+                                ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300'
+                                : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                            }`}>
+                              {item.tipo === 'anuncio_urgente' ? 'Urgente' : item.tipo === 'anuncio_importante' ? 'Importante' : 'Normal'}
+                            </span>
+                            <span className="font-bold text-xs text-gray-900 dark:text-white truncate">
+                              {item.titulo}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                            {item.mensaje}
+                          </p>
+                          <span className="text-[10px] text-gray-400 mt-1 block">
+                            {new Date(item.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteAnuncio(item.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex-shrink-0"
+                          title="Eliminar comunicado"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: DATOS DE LA AGENCIA */}
           {activeTab === 'agencia' && (
             <form onSubmit={handleSaveAgencia} className="space-y-6">
               <div>

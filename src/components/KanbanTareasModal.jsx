@@ -1,5 +1,9 @@
-import { useState } from 'react';
-import { X, CreditCard, AlignLeft, CheckSquare, MessageSquare, Send, User, Tag, Calendar, Link2, Trash2, Plus, Check } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { 
+  X, CreditCard, AlignLeft, CheckSquare, MessageSquare, Send, 
+  User, Tag, Calendar, Link2, Trash2, Plus, Check, Users
+} from 'lucide-react';
+import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
 export default function KanbanTareasModal({ 
@@ -25,7 +29,40 @@ export default function KanbanTareasModal({
   const [newCheckItem, setNewCheckItem] = useState('');
   const [newComment, setNewComment] = useState('');
   
-  const MIEMBROS_AGENCIA = ['Santiago', 'David', 'Sebas', 'Davilson', 'Daniela', 'Valentina'];
+  // Real team members fetched from Supabase database
+  const [dbMiembros, setDbMiembros] = useState([]);
+  const [loadingMiembros, setLoadingMiembros] = useState(false);
+
+  useEffect(() => {
+    const fetchMiembros = async () => {
+      setLoadingMiembros(true);
+      try {
+        const { data, error } = await supabase
+          .from('perfiles_usuarios')
+          .select('id, nombre_completo, email, rol')
+          .eq('perfil_completado', true)
+          .order('nombre_completo', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          setDbMiembros(data);
+        } else {
+          // Fallback if no members have completed profile yet
+          const { data: allUsers } = await supabase
+            .from('perfiles_usuarios')
+            .select('id, nombre_completo, email, rol');
+          if (allUsers && allUsers.length > 0) {
+            setDbMiembros(allUsers);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching perfiles_usuarios:', err);
+      } finally {
+        setLoadingMiembros(false);
+      }
+    };
+
+    fetchMiembros();
+  }, []);
 
   if (!selectedTarea) return null;
   const tarea = selectedTarea || {};
@@ -91,20 +128,44 @@ export default function KanbanTareasModal({
     updateSelected({ etiquetas: updated });
   };
 
-  // Asignar Miembro
-  const handleAssignUser = (nombre) => {
+  // Asignar Miembro Real de la Base de Datos
+  const handleAssignUser = (miembro) => {
+    const nombreCompleto = typeof miembro === 'string' ? miembro : miembro.nombre_completo || miembro.email;
+    const miembroId = typeof miembro === 'object' ? miembro.id : null;
+    const miembroEmail = typeof miembro === 'object' ? miembro.email : null;
+
     const currentAsignados = tarea.asignados || [];
-    const alreadyJoined = currentAsignados.some(a => (typeof a === 'string' && a === nombre) || a?.nombre === nombre);
+    const alreadyJoined = currentAsignados.some(a => 
+      (typeof a === 'string' && a.toLowerCase() === nombreCompleto.toLowerCase()) || 
+      (typeof a === 'object' && (a?.nombre?.toLowerCase() === nombreCompleto.toLowerCase() || a?.nombre_completo?.toLowerCase() === nombreCompleto.toLowerCase() || (miembroId && a?.id === miembroId)))
+    );
     
     const newAsignados = alreadyJoined 
       ? currentAsignados 
-      : [...currentAsignados, { nombre }];
+      : [...currentAsignados, { id: miembroId, nombre: nombreCompleto, nombre_completo: nombreCompleto, email: miembroEmail }];
 
     updateSelected({ 
-      responsable: nombre,
+      responsable: nombreCompleto,
       asignados: newAsignados
     });
     setShowAsignadosMenu(false);
+  };
+
+  const handleRemoveAsignado = (nombre) => {
+    const currentAsignados = tarea.asignados || [];
+    const filtered = currentAsignados.filter(a => {
+      const nom = typeof a === 'string' ? a : a?.nombre || a?.nombre_completo;
+      return nom !== nombre;
+    });
+    
+    const newResp = tarea.responsable === nombre 
+      ? (filtered.length > 0 ? (typeof filtered[0] === 'string' ? filtered[0] : filtered[0].nombre || filtered[0].nombre_completo) : 'Sin Asignar')
+      : tarea.responsable;
+
+    updateSelected({
+      responsable: newResp,
+      asignados: filtered
+    });
   };
 
   return (
@@ -138,6 +199,38 @@ export default function KanbanTareasModal({
               </p>
             </div>
           </div>
+
+          {/* Asignados Visuales */}
+          {(tarea.asignados || []).length > 0 && (
+            <div>
+              <h4 className="text-[11px] font-bold uppercase text-gray-400 mb-2 flex items-center gap-1">
+                <Users size={12} /> Miembros Asignados
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {tarea.asignados.map((asig, idx) => {
+                  const nombre = typeof asig === 'string' ? asig : asig?.nombre || asig?.nombre_completo || 'Miembro';
+                  return (
+                    <div 
+                      key={idx}
+                      className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-2.5 py-1 rounded-xl text-xs font-bold text-gray-800 dark:text-gray-200"
+                    >
+                      <div className="w-5 h-5 rounded-full bg-gloss-burgundy/20 text-gloss-burgundy dark:text-gloss-pink flex items-center justify-center text-[9px]">
+                        {nombre.substring(0, 2).toUpperCase()}
+                      </div>
+                      <span>{nombre}</span>
+                      <button 
+                        onClick={() => handleRemoveAsignado(nombre)}
+                        className="text-gray-400 hover:text-red-500 p-0.5 rounded ml-1"
+                        title="Quitar asignación"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Etiquetas visuales en modal */}
           {(tarea.etiquetas || []).length > 0 && (
@@ -329,9 +422,9 @@ export default function KanbanTareasModal({
             </select>
           </div>
 
-          {/* Responsable / Miembro */}
+          {/* Responsable Principal */}
           <div>
-            <h4 className="text-[11px] font-bold text-gray-500 uppercase mb-1.5">Responsable</h4>
+            <h4 className="text-[11px] font-bold text-gray-500 uppercase mb-1.5">Responsable Principal</h4>
             <div className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-2 rounded-xl">
               <div className="w-6 h-6 rounded-full bg-gloss-burgundy/10 text-gloss-burgundy dark:bg-gloss-pink/10 dark:text-gloss-pink flex items-center justify-center text-[10px] font-bold">
                 {tarea.responsable?.substring(0,2).toUpperCase() || 'SA'}
@@ -340,12 +433,12 @@ export default function KanbanTareasModal({
             </div>
           </div>
 
-          {/* Botón Unirse y Acciones Rápidas */}
+          {/* Acciones Rápidas */}
           <div>
             <h4 className="text-[11px] font-bold text-gray-500 uppercase mb-2">Acciones</h4>
             <div className="space-y-2">
               
-              {/* Selector de Miembros */}
+              {/* Selector de Miembros Dinámico desde Base de Datos */}
               <div className="relative">
                 <button 
                   type="button"
@@ -355,23 +448,38 @@ export default function KanbanTareasModal({
                   <User size={15}/> Añadir Miembro
                 </button>
                 {showAsignadosMenu && (
-                  <div className="absolute top-full right-0 md:left-0 mt-1 w-56 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-2 shadow-2xl z-50">
-                    <p className="text-[11px] font-bold text-gray-500 uppercase px-2 mb-2">Asignar a:</p>
-                    <div className="space-y-1">
-                      {MIEMBROS_AGENCIA.map(m => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => handleAssignUser(m)}
-                          className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors flex items-center gap-2"
-                        >
-                          <div className="w-5 h-5 rounded-full bg-gloss-burgundy/10 text-gloss-burgundy dark:bg-gloss-pink/10 dark:text-gloss-pink flex items-center justify-center text-[9px]">
-                            {m.substring(0, 2).toUpperCase()}
-                          </div>
-                          {m}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="absolute top-full right-0 md:left-0 mt-1 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-2 shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase px-2 mb-2">
+                      Miembros Registrados ({dbMiembros.length}):
+                    </p>
+                    {loadingMiembros ? (
+                      <p className="text-xs text-gray-400 p-2">Cargando miembros...</p>
+                    ) : dbMiembros.length === 0 ? (
+                      <p className="text-xs text-gray-400 p-2">No hay miembros registrados.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {dbMiembros.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => handleAssignUser(m)}
+                            className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors flex items-center gap-2"
+                          >
+                            <div className="w-6 h-6 rounded-full bg-gloss-burgundy/15 text-gloss-burgundy dark:bg-gloss-pink/15 dark:text-gloss-pink flex items-center justify-center text-[10px] flex-shrink-0">
+                              {(m.nombre_completo || m.email).substring(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-gray-900 dark:text-white font-bold">
+                                {m.nombre_completo || m.email}
+                              </p>
+                              <span className="text-[10px] text-gray-400 block truncate">
+                                {m.rol || 'Miembro'}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
