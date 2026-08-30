@@ -156,38 +156,65 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   doc.setFillColor(...PINK_LIGHT);
   doc.rect(W / 2, 0, W / 2, 8, 'F');
 
-  y = 18;
+  y = 15;
+
+  // ── 1.5. Cargar e insertar Logotipo y Marca de Agua ────────────────
+  try {
+    const logoBase64 = await fetch('/logo.png')
+      .then(res => res.blob())
+      .then(blob => new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      }));
+    
+    // Ancho max: 4.5 cm (45mm).
+    doc.addImage(logoBase64, 'PNG', M, y, 45, 12, undefined, 'FAST');
+    
+    // Marca de agua (opcional si jsPDF soporta GState)
+    if (typeof doc.GState === 'function') {
+      doc.saveGraphicsState();
+      doc.setGState(new doc.GState({opacity: 0.05}));
+      doc.addImage(logoBase64, 'PNG', (W - 140) / 2, (doc.internal.pageSize.getHeight() - 35) / 2, 140, 35, undefined, 'FAST');
+      doc.restoreGraphicsState();
+    }
+    
+    y += 18; // Desplazar cursor
+  } catch (error) {
+    console.warn('Error cargando el logo, usando fallback de texto', error);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(24);
+    doc.setTextColor(...BURGUNDY);
+    doc.text(nombreAgencia, M, y + 6);
+    y += 12;
+  }
 
   // ── 2. Membrete ───────────────────────────────────────────────────
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(24);
-  doc.setTextColor(...BURGUNDY);
-  doc.text(nombreAgencia, M, y);
-
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(...GRAY);
-  doc.text(`${lemaAgencia}${nitAgencia}`, M, y + 5.5);
+  doc.text(`${lemaAgencia}${nitAgencia}`, M, y);
   if (agencia?.direccion || telAgencia || correoAgencia || webAgencia) {
     const contactLine = [agencia?.direccion, ciudadAgencia, telAgencia, correoAgencia, webAgencia].filter(Boolean).join(' • ');
     doc.setFontSize(7.5);
-    doc.text(contactLine, M, y + 9.5);
+    doc.text(contactLine, M, y + 4);
   }
 
-  // Número + fechas (columna derecha)
+  // Número + fechas (columna derecha fijada arriba)
+  const rightY = 22;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(...DARK);
-  doc.text(`Cotización #${NUM}`, W - M, y, { align: 'right' });
+  doc.text(`Cotización #${NUM}`, W - M, rightY, { align: 'right' });
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(...GRAY);
-  doc.text(`Emisión: ${fmtDate(fechaEmision)}`, W - M, y + 6, { align: 'right' });
-  doc.text(`Válido hasta: ${fmtDate(fechaVencimiento)}`, W - M, y + 11, { align: 'right' });
+  doc.text(`Emisión: ${fmtDate(fechaEmision)}`, W - M, rightY + 6, { align: 'right' });
+  doc.text(`Válido hasta: ${fmtDate(fechaVencimiento)}`, W - M, rightY + 11, { align: 'right' });
 
   // Línea divisoria
-  y += 18;
+  y = Math.max(y + 8, rightY + 18);
   doc.setDrawColor(...BURGUNDY);
   doc.setLineWidth(0.5);
   doc.line(M, y, W - M, y);
@@ -310,24 +337,28 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   if (y + 40 > pageH - 20) { doc.addPage(); y = 20; }
 
   doc.setFillColor(255, 251, 235); // amber-50
-  const clausH = 8 + doc.splitTextToSize(terminos, CW - 10).length * 4.5;
-  doc.roundedRect(M, y, CW, clausH, 3, 3, 'F');
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5); // Aumentar fuente ligeramente
+  const lines = doc.splitTextToSize(terminos, CW - 10);
+  const clausH = 5 + lines.length * 4.2; // Reducir padding vertical
+
+  doc.roundedRect(M, y, CW, clausH + 4, 3, 3, 'F');
   doc.setDrawColor(253, 230, 138);
   doc.setLineWidth(0.3);
-  doc.roundedRect(M, y, CW, clausH, 3, 3, 'S');
+  doc.roundedRect(M, y, CW, clausH + 4, 3, 3, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setTextColor(146, 64, 14); // amber-800
-  doc.text('TÉRMINOS COMERCIALES Y ACUERDOS', M + 4, y + 6);
+  doc.text('TÉRMINOS COMERCIALES Y ACUERDOS', M + 4, y + 5.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(9.5);
   doc.setTextColor(...DARK);
-  const lines = doc.splitTextToSize(terminos, CW - 10);
-  doc.text(lines, M + 4, y + 12);
+  doc.text(lines, M + 4, y + 10);
 
-  y += clausH + 8;
+  y += clausH + 12;
 
   // ── 8. Firmas ─────────────────────────────────────────────────────
   if (y + 30 < pageH - 15) {
@@ -410,7 +441,7 @@ export default function Catalogo() {
       'El presente documento tiene una validez de 15 días calendario.\n' +
       'Condiciones de pago: 50% anticipo al inicio del proyecto y 50% contra entrega.\n' +
       'Los tiempos de ejecución inician a partir de la recepción total de los insumos por parte del cliente.\n' +
-      'Gloss Growth OS se reserva el derecho de ajustar condiciones ante cambios sustanciales en el alcance acordado.',
+      'Gloss & Growth se reserva el derecho de ajustar condiciones ante cambios sustanciales en el alcance acordado.',
   });
 
   const toggleExpand = (id) =>
