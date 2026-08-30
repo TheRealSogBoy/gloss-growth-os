@@ -281,7 +281,7 @@ export default function KanbanTareas() {
           updateSelected={updateSelected}
           tareas={tareas}
           setTareas={setTareas}
-          handleSaveModal={handleSaveModal}
+          handleSaveModal={() => setSelectedTarea(null)}
           CLIENTES_MOCK={CLIENTES_MOCK}
           ETIQUETAS_COLORES={ETIQUETAS_COLORES}
         />
