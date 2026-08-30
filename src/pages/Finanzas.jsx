@@ -75,7 +75,7 @@ export default function Finanzas() {
                   fetchedIngresos.push({
                     id: 'virtual_' + cliente.id,
                     cliente_id: cliente.id,
-                    concepto: `Pago suscripción - ${cliente.negocio?.nombre}`,
+                    concepto: `Cobro mensual - ${cliente.negocio?.nombre}`,
                     cliente: 'Directorio (Virtual)',
                     tipo: 'Operativo',
                     monto: Number(cliente.contrato.valor) || 0,
@@ -107,7 +107,7 @@ export default function Finanzas() {
 
   // === ESTADOS (Formularios) ===
   const [formIngreso, setFormIngreso] = useState({ concepto: '', cliente: '', tipo: 'Retainer', monto: '', fecha: '' });
-  const [formGasto, setFormGasto] = useState({ concepto: '', categoria: 'Variables', monto: '', fecha: '', metodo: 'Efectivo/Transferencia' });
+  const [formGasto, setFormGasto] = useState({ concepto: '', categoria: 'Variables', monto: '', fecha: '', metodo: 'Caja General' });
   const [formFijo, setFormFijo] = useState({ concepto: '', categoria: 'SaaS', monto: '', fechaInicio: '', diaCobro: 1 });
   const [formDeuda, setFormDeuda] = useState({ concepto: '', monto: '', fechaLimite: '' });
   const [formRetiro, setFormRetiro] = useState({ socio: 'Davilson', monto: '' });
@@ -133,36 +133,44 @@ export default function Finanzas() {
   } = useMemo(() => {
     // Ingresos
     const tIngresos = ingresos.reduce((acc, curr) => acc + Number(curr.monto), 0);
-    // Gastos que afectan caja (Efectivo/Transferencia + Recurrentes ya descontados del mes)
-    const tGastosVar = gastos.reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const tGastosFijos = gastosFijos.reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const tGastosCaja = tGastosVar + tGastosFijos; 
-    
-    // Deuda TDC acumulada (No resta de la utilidad hasta que se pague)
-    const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
+    // Gastos que afectan caja (Efectivo/Transferencia + Recurrentes)
+      const tGastosVar = gastos.filter(g => !['Bóveda de Agencia', 'Cuenta Davilson', 'Cuenta Santiago'].includes(g.metodo)).reduce((acc, curr) => acc + Number(curr.monto), 0);
+      const tGastosFijos = gastosFijos.reduce((acc, curr) => acc + Number(curr.monto), 0);
+      const tGastosCaja = tGastosVar + tGastosFijos; 
+      
+      // Gastos pagados con fondos específicos
+      const gastosBoveda = gastos.filter(g => g.metodo === 'Bóveda de Agencia').reduce((acc, curr) => acc + Number(curr.monto), 0);
+      const gastosDavilson = gastos.filter(g => g.metodo === 'Cuenta Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+      const gastosSantiago = gastos.filter(g => g.metodo === 'Cuenta Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
 
-    // Utilidad Bruta
-    const uBruta = tIngresos - tGastosCaja;
-    
-    // Distribución
-    const fReinversion = uBruta > 0 ? uBruta * 0.15 : 0;
-    const uDistribuible = uBruta > 0 ? uBruta * 0.85 : 0;
-    const gananciaSocio = uDistribuible * 0.50;
-
-    // Retiros
-    const retirosDavilson = retiros.filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
-
-    return {
-      totalIngresos: tIngresos,
-      totalGastosEfectivo: tGastosCaja,
-      utilidadBrutaMes: uBruta,
-      fondoReinversionMes: fReinversion,
-      fondoTotalBoveda: 0 + fReinversion,
-      saldoDavilson: 0 + gananciaSocio - retirosDavilson,
-      saldoSantiago: 0 + gananciaSocio - retirosSantiago,
-      totalTDC: tTDC
-    };
+      // Deuda TDC acumulada (No resta de la utilidad hasta que se pague)
+      const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
+  
+      // Utilidad Bruta (Ingresos reales - Gastos de caja reales)
+      const uBruta = tIngresos - tGastosCaja;
+      
+      // Distribución
+      // 15% intocable sobre los ingresos reales brutos? No, la instrucción dice "sobre los ingresos brutos reales ($3.500.000 * 0.15 = $525.000)"
+      const fReinversion = tIngresos * 0.15; 
+      
+      // Utilidad Distribuible = Utilidad Bruta - 15% de Ingresos Brutos (que van a bóveda)
+      const uDistribuible = uBruta > 0 ? (uBruta - fReinversion) : 0;
+      const gananciaSocio = uDistribuible > 0 ? (uDistribuible * 0.50) : 0;
+  
+      // Retiros
+      const retirosDavilson = retiros.filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+      const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+  
+      return {
+        totalIngresos: tIngresos,
+        totalGastosEfectivo: tGastosCaja,
+        utilidadBrutaMes: uBruta,
+        fondoReinversionMes: fReinversion,
+        fondoTotalBoveda: fReinversion - gastosBoveda,
+        saldoDavilson: gananciaSocio - retirosDavilson - gastosDavilson,
+        saldoSantiago: gananciaSocio - retirosSantiago - gastosSantiago,
+        totalTDC: tTDC
+      };
   }, [ingresos, gastos, gastosFijos, comprasTDC, retiros]);
 
   // === MANEJADORES DE SUBMIT ===
@@ -178,14 +186,14 @@ export default function Finanzas() {
   const handleGasto = async (e) => {
     e.preventDefault();
     const payload = { concepto: formGasto.concepto, categoria: formGasto.categoria, monto: Number(formGasto.monto), fecha: formGasto.fecha };
-    if (formGasto.metodo === 'Tarjeta de Crédito') {
-      const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
-      if (data && data.length > 0) setComprasTDC([{ id: data[0].id, ...payload }, ...comprasTDC]);
-    } else {
-      payload.metodo = formGasto.metodo;
-      const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-      if (data && data.length > 0) setGastos([{ id: data[0].id, ...payload }, ...gastos]);
-    }
+    if (formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Cr\u00e9dito') {
+        const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
+        if (data && data.length > 0) setComprasTDC([{ id: data[0].id, ...payload }, ...comprasTDC]);
+      } else {
+        payload.metodo = formGasto.metodo;
+        const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
+        if (data && data.length > 0) setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+      }
     setModalGasto(false);
   };
 
@@ -324,13 +332,26 @@ export default function Finanzas() {
             <div>
               <p className="text-white/80 text-sm mb-1">Total Protegido</p>
               <h2 className="text-4xl font-bold font-zodiak">{formatCOP(fondoTotalBoveda)}</h2>
+              </div>
+            </div>
+            
+            <div className="mt-4 relative z-10">
+              <button 
+                onClick={() => {
+                  setFormGasto({ concepto: '', categoria: 'Operativos', monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Bóveda de Agencia' });
+                  setModalGasto(true);
+                }}
+                className="w-full bg-white/20 hover:bg-white/30 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+              >
+                Registrar Retiro / Gasto de Reinversión
+              </button>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-white/20 relative z-10 flex justify-between items-center text-sm">
+              <span>+{formatCOP(fondoReinversionMes)} (Mes actual)</span>
+              <span className="px-2 py-1 bg-white/20 rounded text-xs font-medium">15% Intocable</span>
             </div>
           </div>
-          <div className="mt-6 pt-4 border-t border-white/20 relative z-10 flex justify-between items-center text-sm">
-            <span>+{formatCOP(fondoReinversionMes)} (Mes actual)</span>
-            <span className="px-2 py-1 bg-white/20 rounded text-xs font-medium">15% Intocable</span>
-          </div>
-        </div>
         <SocioCard nombre="Davilson" saldo={saldoDavilson} />
         <SocioCard nombre="Santiago" saldo={saldoSantiago} />
       </div>
@@ -558,7 +579,7 @@ export default function Finanzas() {
                 <div><label className="block text-sm mb-1">Categoría</label><select value={formGasto.categoria} onChange={e=>setFormGasto({...formGasto, categoria: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900"><option>Variables</option><option>Operativos</option><option>Equipos</option></select></div>
                 <div><label className="block text-sm mb-1">Fecha</label><input required type="date" value={formGasto.fecha} onChange={e=>setFormGasto({...formGasto, fecha: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
               </div>
-              <div><label className="block text-sm mb-1">Método de Pago</label><select value={formGasto.metodo} onChange={e=>setFormGasto({...formGasto, metodo: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900 font-medium text-gloss-burgundy"><option>Efectivo/Transferencia</option><option>Tarjeta de Crédito</option></select></div>
+              <div><label className="block text-sm mb-1">Origen del Dinero</label><select value={formGasto.metodo} onChange={e=>setFormGasto({...formGasto, metodo: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900 font-medium text-gloss-burgundy"><option>Caja General</option><option>Bóveda de Agencia</option><option>Cuenta Davilson</option><option>Cuenta Santiago</option><option>Tarjeta de Crédito (TDC)</option></select></div>
               <div><label className="block text-sm mb-1">Monto (COP)</label><input required type="number" min="0" value={formGasto.monto} onChange={e=>setFormGasto({...formGasto, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={()=>setModalGasto(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>

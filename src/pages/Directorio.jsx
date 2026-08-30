@@ -310,8 +310,8 @@ export default function Directorio() {
             categoria: 'Suscripción Recurrente',
             monto: Number(form.contrato.valor) || 0,
             fecha_pago: new Date().toISOString().split('T')[0],
-            estado: 'completado',
-            descripcion: `Pago suscripción - ${form.negocio?.nombre}`
+            estado: 'ejecutado',
+            descripcion: `Cobro mensual - ${form.negocio?.nombre}`
           }]);
         }
       }
