@@ -104,8 +104,13 @@ const ICON_MAP = {
   Megaphone, Share2, Monitor, LayoutTemplate, Map, Briefcase,
 };
 
-// Contador correlativo en memoria (reset al recargar, suficiente para demo)
-let quoteCounter = 1000;
+// Contador correlativo persistente
+const getNextQuoteNumber = () => {
+  let counter = parseInt(localStorage.getItem('gg_quote_counter') || '1000', 10);
+  counter += 1;
+  localStorage.setItem('gg_quote_counter', counter.toString());
+  return counter;
+};
 
 const fmt = (v) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v ?? 0);
@@ -127,7 +132,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   const W   = doc.internal.pageSize.getWidth();
   const M   = 15;      // margen lateral
   const CW  = W - M * 2; // ancho útil
-  const NUM = String(++quoteCounter);
+  const NUM = String(getNextQuoteNumber());
   const fechaEmision   = new Date();
   const fechaVencimiento = new Date(Date.now() + 15 * 86400000);
   const fmtDate = (d) => d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -438,10 +443,10 @@ export default function Catalogo() {
     clienteId: 'nuevo',
     id: 'svc_10', nombre: '', contacto: '', ciudad: '', documento: '',
     terminos:
-      'El presente documento tiene una validez de 15 días calendario.\n' +
-      'Condiciones de pago: 50% anticipo al inicio del proyecto y 50% contra entrega.\n' +
-      'Los tiempos de ejecución inician a partir de la recepción total de los insumos por parte del cliente.\n' +
-      'Gloss & Growth se reserva el derecho de ajustar condiciones ante cambios sustanciales en el alcance acordado.',
+      '• El presente documento tiene una validez de 15 días calendario.\n' +
+      '• Condiciones de pago: 50% anticipo al inicio del proyecto y 50% contra entrega.\n' +
+      '• Los tiempos de ejecución inician a partir de la recepción total de los insumos por parte del cliente.\n' +
+      '• Gloss & Growth se reserva el derecho de ajustar condiciones ante cambios sustanciales en el alcance acordado.',
   });
 
   const toggleExpand = (id) =>
