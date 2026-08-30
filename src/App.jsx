@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ConfigProvider } from './context/ConfigContext';
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 
@@ -19,23 +20,27 @@ const NotFound = () => <div className="p-6"><h1 className="text-3xl font-zodiak 
 function App() {
   return (
     <AuthProvider>
-    <ConfigProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<ProtectedRoute />}><Route element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="directorio" element={<Directorio />} />
-            <Route path="kanban-clientes" element={<KanbanClientes />} />
-            <Route path="kanban-tareas" element={<KanbanTareas />} />
-            <Route path="calendario" element={<Calendario />} />
-            <Route path="finanzas" element={<Finanzas />} />
-            <Route path="catalogo" element={<Catalogo />} />
-            <Route path="*" element={<NotFound />} />
-          </Route></Route>
-        </Routes>
-      </BrowserRouter>
-    </ConfigProvider>
+      <ConfigProvider>
+        <NotificationProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<ProtectedRoute />}>
+                <Route element={<Layout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="directorio" element={<Directorio />} />
+                  <Route path="kanban-clientes" element={<KanbanClientes />} />
+                  <Route path="kanban-tareas" element={<KanbanTareas />} />
+                  <Route path="calendario" element={<Calendario />} />
+                  <Route path="finanzas" element={<Finanzas />} />
+                  <Route path="catalogo" element={<Catalogo />} />
+                  <Route path="*" element={<NotFound />} />
+                </Route>
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </NotificationProvider>
+      </ConfigProvider>
     </AuthProvider>
   );
 }

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut } from 'lucide-react';
+import { useNotifications } from '../context/NotificationContext';
+import NotificationsDropdown from './NotificationsDropdown';
 import { 
   LayoutDashboard, 
   Users, 
@@ -15,7 +16,9 @@ import {
   Moon,
   Menu,
   X,
-  Settings
+  Settings,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 import ConfigModal from './ConfigModal';
 
@@ -38,10 +41,12 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { unreadCount } = useNotifications();
+  const userMenuRef = useRef(null);
 
   useEffect(() => {
     if (darkMode) {
@@ -50,6 +55,21 @@ export default function Layout() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Close user dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    if (userDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [userDropdownOpen]);
 
   const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, to: '/' },
@@ -60,6 +80,10 @@ export default function Layout() {
     { label: 'Finanzas', icon: Wallet, to: '/finanzas' },
     { label: 'Catálogo', icon: ShoppingBag, to: '/catalogo' },
   ];
+
+  const userAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+  const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Socio';
+  const userEmail = user?.email || '';
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#2a1f1b] flex transition-colors duration-200">
@@ -129,7 +153,7 @@ export default function Layout() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 lg:gap-4">
+          <div className="flex items-center gap-2 lg:gap-3">
             {/* Quick Settings Gear in Header */}
             <button
               onClick={() => setConfigOpen(true)}
@@ -143,44 +167,92 @@ export default function Layout() {
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 rounded-full transition-colors"
+              title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}
             >
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
 
-            {/* Notifications */}
+            {/* Notifications Button & Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className="p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 rounded-full transition-colors relative"
+                className={`p-2 rounded-full transition-all relative ${
+                  notificationsOpen 
+                    ? 'bg-gloss-burgundy/10 text-gloss-burgundy dark:bg-gloss-pink/10 dark:text-gloss-pink' 
+                    : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                }`}
+                title="Notificaciones"
               >
                 <Bell size={20} />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-gloss-burgundy rounded-full"></span>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-600 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 border-2 border-white dark:border-gloss-black animate-pulse">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
               </button>
 
-              {/* Notifications Dropdown */}
-              {notificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gloss-black border border-gray-200 dark:border-gray-800 rounded-lg shadow-lg overflow-hidden z-50">
-                  <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
-                    <h3 className="font-zodiak font-bold text-lg">Notificaciones</h3>
-                    <button onClick={() => setNotificationsOpen(false)}>
-                      <X size={16} className="text-gray-500" />
-                    </button>
+              <NotificationsDropdown 
+                isOpen={notificationsOpen} 
+                onClose={() => setNotificationsOpen(false)} 
+              />
+            </div>
+            
+            {/* User Profile Avatar & Dropdown */}
+            <div className="relative pl-1" ref={userMenuRef}>
+              <button 
+                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                title={`${userName} (${userEmail})`}
+              >
+                {userAvatar ? (
+                  <img 
+                    src={userAvatar} 
+                    alt={userName} 
+                    className="w-8 h-8 rounded-full object-cover border border-gloss-pink/60 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-gloss-burgundy/15 dark:bg-gloss-pink/20 flex items-center justify-center border border-gloss-burgundy/40 dark:border-gloss-pink/40 text-gloss-burgundy dark:text-gloss-pink font-bold text-xs">
+                    {userName.substring(0, 2).toUpperCase()}
                   </div>
-                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                    <Bell size={24} className="mx-auto mb-2 opacity-50" />
-                    <p>No tienes notificaciones nuevas</p>
+                )}
+              </button>
+
+              {userDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gloss-black border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-scale-in">
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                    <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                      {userName}
+                    </p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                      {userEmail}
+                    </p>
+                  </div>
+
+                  <div className="p-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        setUserDropdownOpen(false);
+                        setConfigOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
+                    >
+                      <UserIcon size={15} className="text-gray-400" />
+                      <span>Perfil y Equipo</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setUserDropdownOpen(false);
+                        signOut();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-colors"
+                    >
+                      <LogOut size={15} />
+                      <span>Cerrar Sesión</span>
+                    </button>
                   </div>
                 </div>
               )}
-            </div>
-            
-            {/* User Profile Avatar Placeholder */}
-            <div 
-              onClick={() => setConfigOpen(true)}
-              className="w-8 h-8 rounded-full bg-gloss-pink/30 flex items-center justify-center border border-gloss-pink cursor-pointer hover:scale-105 transition-transform"
-              title="Perfil y Configuración"
-            >
-              <span className="text-gloss-burgundy text-sm font-bold">GG</span>
             </div>
           </div>
         </header>
