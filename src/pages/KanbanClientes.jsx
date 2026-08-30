@@ -119,29 +119,39 @@ export default function KanbanClientes() {
     const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' });
 
     const handleSaveLead = async (e) => {
-      e.preventDefault();
-      const enlacesGenerados = [];
-      if (leadForm.facebook) enlacesGenerados.push({ red: 'Facebook', url: leadForm.facebook });
-      if (leadForm.instagram) enlacesGenerados.push({ red: 'Instagram', url: leadForm.instagram });
-      if (leadForm.tiktok) enlacesGenerados.push({ red: 'TikTok', url: leadForm.tiktok });
-      if (leadForm.sitio_web) enlacesGenerados.push({ red: 'Sitio Web', url: leadForm.sitio_web });
-      if (leadForm.google) enlacesGenerados.push({ red: 'Perfil de Google', url: leadForm.google });
+        e.preventDefault();
+        if (!leadForm.nombre_clinica) {
+          alert('Por favor ingrese el nombre de la Clínica / Estética.');
+          return;
+        }
 
-      const payload = {
-        negocio_nombre: leadForm.nombre_clinica,
-        contactos: [{ nombre: leadForm.nombre_contacto, telefono: leadForm.telefono, rol: 'Prospecto' }],
-        enlaces: enlacesGenerados,
-        contrato_notas: `Interés: ${(leadForm.interes || []).join(', ')}. Próxima acción: ${leadForm.fecha_accion}`,
-        contrato_valor: leadForm.valor,
-        etapa_comercial: leadForm.columna,
-        estado_contrato: 'Prospecto'
+        const enlacesGenerados = [];
+        if (leadForm.facebook) enlacesGenerados.push({ red: 'Facebook', url: leadForm.facebook });
+        if (leadForm.instagram) enlacesGenerados.push({ red: 'Instagram', url: leadForm.instagram });
+        if (leadForm.tiktok) enlacesGenerados.push({ red: 'TikTok', url: leadForm.tiktok });
+        if (leadForm.sitio_web) enlacesGenerados.push({ red: 'Sitio Web', url: leadForm.sitio_web });
+        if (leadForm.google) enlacesGenerados.push({ red: 'Perfil de Google', url: leadForm.google });
+  
+        const payload = {
+          negocio_nombre: leadForm.nombre_clinica,
+          contactos: [{ nombre: leadForm.nombre_contacto || 'Sin nombre', telefono: leadForm.telefono || 'Sin teléfono', rol: 'Prospecto' }],
+          enlaces: enlacesGenerados,
+          contrato_notas: `Interés: ${(leadForm.interes || []).join(', ')}. Próxima acción: ${leadForm.fecha_accion}`,
+          contrato_valor: Number(leadForm.valor) || 0,
+          etapa_comercial: leadForm.columna,
+          estado_contrato: 'Prospecto'
+        };
+        const { data, error } = await supabase.from('clientes').insert([payload]).select();
+        if (error) {
+          console.error('Error insertando cliente:', error);
+          alert('Hubo un error al guardar: ' + error.message);
+          return;
+        }
+        if (data && data.length > 0) {
+          setClientes([mapToKanbanForm(data[0]), ...clientes]);
+          setShowLeadModal(false);
+        }
       };
-      const { data, error } = await supabase.from('clientes').insert([payload]).select();
-      if (!error && data && data.length > 0) {
-        setClientes([mapToKanbanForm(data[0]), ...clientes]);
-        setShowLeadModal(false);
-      }
-    };
 
   // === FILTRADO ===
   const clientesFiltrados = useMemo(() => {
@@ -489,16 +499,16 @@ export default function KanbanClientes() {
             <form onSubmit={handleSaveLead} className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
               <div>
                 <label className="block text-sm mb-1">Clínica / Estética *</label>
-                <input required value={leadForm.nombre_clinica} onChange={e=>setLeadForm({...leadForm, nombre_clinica: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Nombre comercial"/>
+                <input value={leadForm.nombre_clinica} onChange={e=>setLeadForm({...leadForm, nombre_clinica: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Nombre comercial"/>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm mb-1">Nombre Contacto *</label>
-                  <input required value={leadForm.nombre_contacto} onChange={e=>setLeadForm({...leadForm, nombre_contacto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Dr. o Dra."/>
+                  <input value={leadForm.nombre_contacto} onChange={e=>setLeadForm({...leadForm, nombre_contacto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Dr. o Dra."/>
                 </div>
                 <div>
                   <label className="block text-sm mb-1">WhatsApp / Teléfono *</label>
-                  <input required value={leadForm.telefono} onChange={e=>setLeadForm({...leadForm, telefono: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="+57..."/>
+                  <input value={leadForm.telefono} onChange={e=>setLeadForm({...leadForm, telefono: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="+57..."/>
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-3">
