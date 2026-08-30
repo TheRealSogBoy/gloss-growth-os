@@ -19,6 +19,7 @@ const INITIAL_AGENCIA = {
   telefono: '+57 (300) 456-7890',
   correo: 'contacto@glossgrowth.com',
   ciudad: 'Medellín, Colombia',
+  sitio_web: 'https://glossgrowhq.com',
   lema: 'Soluciones Estratégicas para el Sector Salud & Estética'
 };
 
@@ -45,17 +46,35 @@ export function ConfigProvider({ children }) {
       }
       setEquipo(eqData || []);
 
+      const localSitioWeb = typeof window !== 'undefined' ? localStorage.getItem('gloss_agencia_sitio_web') : null;
+
       // Fetch agencia
       let { data: agData, error: agErr } = await supabase.from('agencia_datos').select('*').limit(1);
       if (agErr) throw agErr;
 
       if (!agData || agData.length === 0) {
         // Seed initial agencia
-        const { data: newAg, error: insAgErr } = await supabase.from('agencia_datos').insert([INITIAL_AGENCIA]).select();
+        const { data: newAg, error: insAgErr } = await supabase.from('agencia_datos').insert([{
+          nombre: INITIAL_AGENCIA.nombre,
+          nit: INITIAL_AGENCIA.nit,
+          direccion: INITIAL_AGENCIA.direccion,
+          telefono: INITIAL_AGENCIA.telefono,
+          correo: INITIAL_AGENCIA.correo,
+          ciudad: INITIAL_AGENCIA.ciudad,
+          lema: INITIAL_AGENCIA.lema
+        }]).select();
         if (insAgErr) console.error('Error seeding agencia:', insAgErr);
-        if (newAg && newAg.length > 0) setDatosAgencia(newAg[0]);
+        if (newAg && newAg.length > 0) {
+          setDatosAgencia({
+            ...newAg[0],
+            sitio_web: newAg[0].sitio_web || newAg[0].website || localSitioWeb || INITIAL_AGENCIA.sitio_web
+          });
+        }
       } else {
-        setDatosAgencia(agData[0]);
+        setDatosAgencia({
+          ...agData[0],
+          sitio_web: agData[0].sitio_web || agData[0].website || localSitioWeb || INITIAL_AGENCIA.sitio_web
+        });
       }
 
     } catch (err) {
@@ -94,13 +113,38 @@ export function ConfigProvider({ children }) {
   };
 
   const updateDatosAgencia = async (nuevosDatos) => {
-    if (datosAgencia.id) {
-      const { data, error } = await supabase.from('agencia_datos').update(nuevosDatos).eq('id', datosAgencia.id).select();
-      if (!error && data) setDatosAgencia(data[0]);
-    } else {
-      const { data, error } = await supabase.from('agencia_datos').insert([nuevosDatos]).select();
-      if (!error && data) setDatosAgencia(data[0]);
+    if (typeof window !== 'undefined' && nuevosDatos.sitio_web) {
+      localStorage.setItem('gloss_agencia_sitio_web', nuevosDatos.sitio_web);
     }
+
+    try {
+      if (datosAgencia.id) {
+        const { data, error } = await supabase.from('agencia_datos').update(nuevosDatos).eq('id', datosAgencia.id).select();
+        if (error) {
+          // If schema cache doesn't recognize sitio_web column, remove it from payload sent to postgres
+          const { sitio_web, website, ...cleanPayload } = nuevosDatos;
+          const { data: fallbackData } = await supabase.from('agencia_datos').update(cleanPayload).eq('id', datosAgencia.id).select();
+          if (fallbackData && fallbackData.length > 0) {
+            setDatosAgencia({ ...fallbackData[0], sitio_web: nuevosDatos.sitio_web });
+            return;
+          }
+        } else if (data && data.length > 0) {
+          setDatosAgencia({ ...data[0], sitio_web: nuevosDatos.sitio_web || data[0].sitio_web });
+          return;
+        }
+      } else {
+        const { sitio_web, website, ...cleanPayload } = nuevosDatos;
+        const { data, error } = await supabase.from('agencia_datos').insert([cleanPayload]).select();
+        if (!error && data) {
+          setDatosAgencia({ ...data[0], sitio_web: nuevosDatos.sitio_web });
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('DB update error on agencia_datos:', e);
+    }
+
+    setDatosAgencia((prev) => ({ ...prev, ...nuevosDatos }));
   };
 
   const responsablesList = equipo.map((m) => m.nombre);

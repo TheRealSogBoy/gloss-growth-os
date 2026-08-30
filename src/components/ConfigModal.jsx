@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Users, Building2, Plus, Trash2, Check, 
   Mail, Phone, Sparkles, ShieldCheck, KeyRound, Copy,
-  CheckCheck, Crown, RefreshCw, AlertCircle
+  CheckCheck, Crown, RefreshCw, AlertCircle, Globe
 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
@@ -535,14 +535,15 @@ export default function ConfigModal({ isOpen, onClose }) {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                    Correo Electrónico de Contacto
+                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1 flex items-center gap-1">
+                    <Globe size={12} className="text-gloss-burgundy dark:text-gloss-pink" />
+                    Sitio Web / URL Oficial
                   </label>
                   <input
-                    type="email"
-                    required
-                    value={agenciaForm.correo}
-                    onChange={(e) => setAgenciaForm({ ...agenciaForm, correo: e.target.value })}
+                    type="url"
+                    placeholder="https://glossgrowhq.com"
+                    value={agenciaForm.sitio_web || agenciaForm.website || ''}
+                    onChange={(e) => setAgenciaForm({ ...agenciaForm, sitio_web: e.target.value })}
                     className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
                   />
                 </div>

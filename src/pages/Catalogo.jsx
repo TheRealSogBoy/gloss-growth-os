@@ -136,6 +136,9 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   const lemaAgencia = agencia?.lema || 'Soluciones Estratégicas para el Sector Salud & Estética';
   const nitAgencia = agencia?.nit ? ` • ${agencia.nit}` : '';
   const ciudadAgencia = agencia?.ciudad || 'Medellín, Colombia';
+  const webAgencia = agencia?.sitio_web || agencia?.website || 'https://glossgrowhq.com';
+  const correoAgencia = agencia?.correo || '';
+  const telAgencia = agencia?.telefono || '';
 
   // ── Paleta corporativa (R,G,B) ──────────────────────────────────────
   const BURGUNDY   = [140, 37, 54];
@@ -165,8 +168,8 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   doc.setFontSize(8.5);
   doc.setTextColor(...GRAY);
   doc.text(`${lemaAgencia}${nitAgencia}`, M, y + 5.5);
-  if (agencia?.direccion || agencia?.telefono) {
-    const contactLine = [agencia.direccion, ciudadAgencia, agencia.telefono].filter(Boolean).join(' • ');
+  if (agencia?.direccion || telAgencia || correoAgencia || webAgencia) {
+    const contactLine = [agencia?.direccion, ciudadAgencia, telAgencia, correoAgencia, webAgencia].filter(Boolean).join(' • ');
     doc.setFontSize(7.5);
     doc.text(contactLine, M, y + 9.5);
   }
@@ -354,7 +357,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
     doc.setFontSize(7);
     doc.setTextColor(...WHITE);
     doc.text(
-      `Cotización #${NUM}  •  ${agencia?.nombre || 'Gloss Growth OS'}  •  Documento Confidencial  •  Página ${i} de ${totalPages}`,
+      `Cotización #${NUM}  •  ${agencia?.nombre || 'Gloss Growth OS'}  •  ${webAgencia}  •  Página ${i} de ${totalPages}`,
       W / 2, pageH - 3, { align: 'center' }
     );
   }
