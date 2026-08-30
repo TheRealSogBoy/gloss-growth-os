@@ -2,11 +2,13 @@ import KanbanTareasModal from '../components/KanbanTareasModal';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
-  Plus, GripVertical, Calendar, User, Clock, AlertCircle, 
-  CheckCircle, X, Building2, Tag, CheckSquare, AlignLeft, 
-  MessageSquare, Link2, Trash2, Send, CreditCard, Flag
+  Plus, Calendar, AlertCircle, 
+  CheckCircle, X, CheckSquare, 
+  MessageSquare, Flag
 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
+import { useAuth } from '../context/AuthContext';
+import { logAuditoria } from '../utils/audit';
 
 const COLUMNAS = ['Por Hacer', 'En Progreso', 'Revisión', 'Completado'];
 const DEFAULT_RESPONSABLES = ['Davilson', 'Santiago', 'Laura', 'Equipo Diseño', 'Equipo Ads', 'Sin Asignar', 'Yo (Actual)'];
@@ -28,8 +30,6 @@ const getTodayFormatted = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-
-
 const getDueDateStatus = (dateString, estado) => {
   if (!dateString) return null;
   if (estado === 'Completado') return { text: 'Completada', color: 'text-green-600 bg-green-50 border-green-200', icon: CheckCircle };
@@ -41,8 +41,8 @@ const getDueDateStatus = (dateString, estado) => {
   const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) return { text: 'Vencida', color: 'text-red-600 bg-red-50 border-red-200', icon: AlertCircle };
-  if (diffDays === 0) return { text: 'Vence Hoy', color: 'text-orange-600 bg-orange-50 border-orange-200', icon: Clock };
-  if (diffDays <= 2) return { text: `Vence en ${diffDays} d`, color: 'text-orange-500 bg-orange-50 border-orange-100', icon: Clock };
+  if (diffDays === 0) return { text: 'Vence Hoy', color: 'text-orange-600 bg-orange-50 border-orange-200', icon: AlertCircle };
+  if (diffDays <= 2) return { text: `Vence en ${diffDays} d`, color: 'text-orange-500 bg-orange-50 border-orange-100', icon: Calendar };
   return { text: `En ${diffDays} d`, color: 'text-gray-500 bg-gray-100 border-gray-200', icon: Calendar };
 };
 
@@ -53,7 +53,6 @@ const getPrioridadBadge = (prio) => {
   return null;
 };
 
-
 const mapToForm = (row) => ({
   id: row.id,
   titulo: row.titulo,
@@ -63,10 +62,11 @@ const mapToForm = (row) => ({
   estado: row.estado,
   descripcion: row.descripcion,
   prioridad: row.prioridad,
-  etiquetas: row.etiquetas || [],
-  checklist: row.checklist || [],
-  enlaces: row.enlaces || [],
-  comentarios: row.comentarios || []
+  etiquetas: Array.isArray(row.etiquetas) ? row.etiquetas : [],
+  checklist: Array.isArray(row.checklist) ? row.checklist : [],
+  enlaces: Array.isArray(row.enlaces) ? row.enlaces : [],
+  comentarios: Array.isArray(row.comentarios) ? row.comentarios : [],
+  asignados: Array.isArray(row.asignados) ? row.asignados : []
 });
 
 const mapToRow = (form) => ({
@@ -77,19 +77,20 @@ const mapToRow = (form) => ({
   estado: form.estado,
   descripcion: form.descripcion,
   prioridad: form.prioridad,
-  etiquetas: form.etiquetas,
-  checklist: form.checklist,
-  enlaces: form.enlaces,
-  comentarios: form.comentarios
+  etiquetas: form.etiquetas || [],
+  checklist: form.checklist || [],
+  enlaces: form.enlaces || [],
+  comentarios: form.comentarios || [],
+  asignados: form.asignados || []
 });
 
 export default function KanbanTareas() {
+  const { user } = useAuth();
   const { responsablesList } = useConfig();
   const listaResponsables = responsablesList?.length 
     ? [...responsablesList, 'Sin Asignar', 'Yo (Actual)'] 
     : DEFAULT_RESPONSABLES;
 
-  
   const [tareas, setTareas] = useState([]);
   const [loadingTareas, setLoadingTareas] = useState(true);
 
@@ -111,7 +112,6 @@ export default function KanbanTareas() {
     }
   };
 
-  
   // === ESTADOS PARA MODAL DETALLADO ===
   const [selectedTarea, setSelectedTarea] = useState(null);
   
@@ -119,22 +119,63 @@ export default function KanbanTareas() {
   const [addingCol, setAddingCol] = useState(null);
   const [quickTitle, setQuickTitle] = useState('');
 
-  // === UI SECUNDARIOS DEL MODAL ===
-  // Menús desplegables Sidebar
-  // === DRAG & DROP ===
-  const onDragStart = (e, id) => e.dataTransfer.setData('taskId', id);
-  const onDragOver = (e) => e.preventDefault();
-  const onDrop = (e, nuevaColumna) => {
-    const id = parseInt(e.dataTransfer.getData('taskId'));
-    if (!id) return;
-    setTareas(prev => prev.map(t => t.id === id ? { ...t, estado: nuevaColumna } : t));
+  // === DRAG & DROP CON UUID STRING Y PERSISTENCIA SUPABASE ===
+  const onDragStart = (e, id) => {
+    e.dataTransfer.setData('taskId', String(id));
   };
 
-  // === ACTUALIZACIÓN EN TIEMPO REAL DEL MODAL ===
-  const updateSelected = (updates) => {
+  const onDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const onDrop = async (e, nuevaColumna) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('taskId');
+    if (!id) return;
+
+    // Actualización optimista en estado local
+    setTareas(prev => prev.map(t => String(t.id) === String(id) ? { ...t, estado: nuevaColumna } : t));
+    
+    if (selectedTarea && String(selectedTarea.id) === String(id)) {
+      setSelectedTarea(prev => ({ ...prev, estado: nuevaColumna }));
+    }
+
+    // Persistencia real en Supabase
+    try {
+      const { error } = await supabase.from('tareas').update({ estado: nuevaColumna }).eq('id', id);
+      if (!error) {
+        logAuditoria(user, 'Kanban Tareas', 'EDITAR', `Tarea movida a columna: ${nuevaColumna}`);
+      }
+    } catch (err) {
+      console.error('Error actualizando estado de tarea en Supabase:', err);
+    }
+  };
+
+  // === ACTUALIZACIÓN EN TIEMPO REAL DEL MODAL Y SUPABASE ===
+  const updateSelected = async (updates) => {
     const updatedTask = { ...selectedTarea, ...updates };
     setSelectedTarea(updatedTask);
-    setTareas(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+    setTareas(prev => prev.map(t => String(t.id) === String(updatedTask.id) ? updatedTask : t));
+
+    // Disparar UPDATE persistente
+    try {
+      await supabase.from('tareas').update(mapToRow(updatedTask)).eq('id', updatedTask.id);
+    } catch (err) {
+      console.error('Error persistiendo cambios de tarea:', err);
+    }
+  };
+
+  // === GUARDAR Y CERRAR MODAL ===
+  const handleSaveModal = async () => {
+    if (selectedTarea) {
+      try {
+        await supabase.from('tareas').update(mapToRow(selectedTarea)).eq('id', selectedTarea.id);
+        logAuditoria(user, 'Kanban Tareas', 'EDITAR', `Tarea actualizada: ${selectedTarea.titulo}`);
+      } catch (err) {
+        console.error('Error guardando modal de tarea:', err);
+      }
+    }
+    setSelectedTarea(null);
   };
 
   // === CREACIÓN RÁPIDA (Estilo Trello) ===
@@ -142,21 +183,31 @@ export default function KanbanTareas() {
     e.preventDefault();
     if (!quickTitle.trim()) { setAddingCol(null); return; }
     
+    const activeUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Sin Asignar';
     const nuevaTarea = {
       titulo: quickTitle.trim(),
       estado: columna,
       responsable: 'Sin Asignar',
       prioridad: 'Media',
       fechaLimite: getTodayFormatted(),
-      cliente: '', descripcion: '', etiquetas: [], checklist: [], enlaces: [], comentarios: []
+      cliente: '',
+      descripcion: '',
+      etiquetas: [],
+      checklist: [],
+      enlaces: [],
+      comentarios: [],
+      asignados: []
     };
     
     try {
       const { data, error } = await supabase.from('tareas').insert([mapToRow(nuevaTarea)]).select();
       if (!error && data && data.length > 0) {
         setTareas([...tareas, mapToForm(data[0])]);
+        logAuditoria(user, 'Kanban Tareas', 'CREAR', `Nueva tarea creada: ${nuevaTarea.titulo}`);
       }
-    } catch(err) {}
+    } catch (err) {
+      console.error('Error insertando nueva tarea:', err);
+    }
     
     setQuickTitle('');
     setAddingCol(null);
@@ -166,7 +217,7 @@ export default function KanbanTareas() {
     <div className="h-full flex flex-col animate-fade-in pb-8">
       <div className="mb-6">
         <h1 className="text-3xl font-zodiak font-bold text-gloss-burgundy dark:text-gloss-inverted">Operación del Equipo</h1>
-        <p className="text-gray-500 dark:text-gray-400 mt-1">Gestión avanzada de tareas, checklist y plazos al estilo Kanban.</p>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">Gestión avanzada de tareas, checklist dinámico y plazos al estilo Kanban.</p>
       </div>
 
       {/* TABLERO KANBAN */}
@@ -178,20 +229,20 @@ export default function KanbanTareas() {
             return (
               <div 
                 key={columna}
-                className="w-[320px] bg-gray-100 dark:bg-gray-900/60 rounded-xl flex flex-col max-h-full border border-gray-200 dark:border-gray-800"
+                className="w-[320px] bg-gray-100 dark:bg-gray-900/60 rounded-2xl flex flex-col max-h-full border border-gray-200 dark:border-gray-800"
                 onDragOver={onDragOver}
                 onDrop={(e) => onDrop(e, columna)}
               >
                 {/* Cabecera Columna */}
-                <div className="p-3 flex justify-between items-center cursor-pointer">
+                <div className="p-3.5 flex justify-between items-center border-b border-gray-200/60 dark:border-gray-800">
                   <h3 className="font-bold text-gray-800 dark:text-gray-200 text-sm">{columna}</h3>
-                  <span className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-bold px-2 py-0.5 rounded-md">
+                  <span className="bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-inner">
                     {tareasColumna.length}
                   </span>
                 </div>
 
                 {/* Tarjetas */}
-                <div className="p-2 flex-1 overflow-y-auto space-y-2.5 custom-scrollbar">
+                <div className="p-2.5 flex-1 overflow-y-auto space-y-2.5 custom-scrollbar min-h-[120px]">
                   {tareasColumna.map(t => {
                     const dueStatus = getDueDateStatus(t.fechaLimite, t.estado);
                     const prioBadge = getPrioridadBadge(t.prioridad);
@@ -200,19 +251,23 @@ export default function KanbanTareas() {
 
                     return (
                       <div 
-                        key={t.id} draggable onDragStart={(e) => onDragStart(e, t.id)}
+                        key={t.id} 
+                        draggable 
+                        onDragStart={(e) => onDragStart(e, t.id)}
                         onClick={() => setSelectedTarea(t)}
-                        className="bg-white dark:bg-gloss-black p-3 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:border-gloss-burgundy/50 transition-colors group relative"
+                        className="bg-white dark:bg-gloss-black p-3.5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-grab active:cursor-grabbing hover:border-gloss-burgundy/50 transition-all group relative"
                       >
                         {/* Etiquetas y Prioridad */}
                         <div className="flex flex-wrap gap-1 mb-2">
                           {prioBadge && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${prioBadge.class}`}>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${prioBadge.class}`}>
                               <prioBadge.icon size={10}/> {t.prioridad}
                             </span>
                           )}
-                          {t.etiquetas?.map((tag, i) => (
-                            <span key={i} className={`text-[10px] font-bold px-2 py-0.5 rounded ${tag.colorClass}`}>{tag.text}</span>
+                          {(t.etiquetas || []).map((tag, i) => (
+                            <span key={i} className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${tag.colorClass || 'bg-gray-100 text-gray-700'}`}>
+                              {tag.text}
+                            </span>
                           ))}
                         </div>
                         
@@ -226,17 +281,17 @@ export default function KanbanTareas() {
                             </span>
                           )}
                           {checkTotal > 0 && (
-                            <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${checkDone === checkTotal ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                            <span className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${checkDone === checkTotal ? 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
                               <CheckSquare size={10}/> {checkDone}/{checkTotal}
                             </span>
                           )}
                           {t.comentarios?.length > 0 && (
-                            <span className="flex items-center gap-1 text-[10px] font-medium text-gray-500">
+                            <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400">
                               <MessageSquare size={10}/> {t.comentarios.length}
                             </span>
                           )}
-                          <div className="ml-auto w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-300 border border-white dark:border-gloss-black" title={t.responsable}>
-                            {t.responsable?.substring(0, 2).toUpperCase() || '?'}
+                          <div className="ml-auto w-6 h-6 rounded-full bg-gloss-burgundy/10 dark:bg-gloss-pink/10 flex items-center justify-center text-[10px] font-bold text-gloss-burgundy dark:text-gloss-pink border border-gloss-burgundy/20" title={t.responsable || 'Sin asignar'}>
+                            {t.responsable?.substring(0, 2).toUpperCase() || 'SA'}
                           </div>
                         </div>
                       </div>
@@ -245,23 +300,24 @@ export default function KanbanTareas() {
 
                   {/* Creación Rápida */}
                   {addingCol === columna ? (
-                    <form onSubmit={(e) => handleQuickAdd(e, columna)} className="bg-white dark:bg-gloss-black p-2 rounded-lg shadow-sm border border-gloss-burgundy">
+                    <form onSubmit={(e) => handleQuickAdd(e, columna)} className="bg-white dark:bg-gloss-black p-2.5 rounded-xl shadow-sm border border-gloss-burgundy">
                       <textarea 
                         autoFocus
-                        value={quickTitle} onChange={e=>setQuickTitle(e.target.value)}
+                        value={quickTitle} 
+                        onChange={e => setQuickTitle(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickAdd(e, columna); } }}
                         placeholder="Título de la tarjeta..."
-                        className="w-full text-sm bg-transparent border-none resize-none focus:ring-0 p-1 mb-2 outline-none"
+                        className="w-full text-xs sm:text-sm bg-transparent border-none resize-none focus:ring-0 p-1 mb-2 outline-none"
                         rows="2"
                       />
                       <div className="flex items-center gap-2">
-                        <button type="submit" className="px-3 py-1 bg-gloss-burgundy text-white text-xs font-medium rounded-md">Añadir</button>
-                        <button type="button" onClick={() => setAddingCol(null)} className="p-1 text-gray-500 hover:text-gray-700"><X size={16}/></button>
+                        <button type="submit" className="px-3 py-1 bg-gloss-burgundy text-white text-xs font-bold rounded-lg shadow-sm">Añadir</button>
+                        <button type="button" onClick={() => setAddingCol(null)} className="p-1 text-gray-400 hover:text-gray-600"><X size={15}/></button>
                       </div>
                     </form>
                   ) : (
-                    <button onClick={() => setAddingCol(columna)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                      <Plus size={16}/> Añada una tarjeta
+                    <button onClick={() => setAddingCol(columna)} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-xl transition-colors">
+                      <Plus size={15}/> Añada una tarjeta
                     </button>
                   )}
                 </div>
@@ -281,7 +337,7 @@ export default function KanbanTareas() {
           updateSelected={updateSelected}
           tareas={tareas}
           setTareas={setTareas}
-          handleSaveModal={() => setSelectedTarea(null)}
+          handleSaveModal={handleSaveModal}
           CLIENTES_MOCK={CLIENTES_MOCK}
           ETIQUETAS_COLORES={ETIQUETAS_COLORES}
         />

@@ -23,6 +23,37 @@ export const CATEGORIAS_GASTOS = [
   "Impuestos"
 ];
 
+// Helper de formateo de fecha y hora exacta
+const formatTimestamp = (createdAt, fallbackDate) => {
+  const raw = createdAt || fallbackDate;
+  if (!raw) return 'Reciente';
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return String(raw);
+
+    // Formato exacto: 2026-08-30 • 02:35 PM
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 becomes 12
+    const strHours = String(hours).padStart(2, '0');
+
+    // Si viene solo fecha corta sin hora (ej. YYYY-MM-DD)
+    if (typeof raw === 'string' && raw.length <= 10) {
+      return `${yyyy}-${mm}-${dd} • 12:00 PM`;
+    }
+
+    return `${yyyy}-${mm}-${dd} • ${strHours}:${minutes} ${ampm}`;
+  } catch (e) {
+    return String(raw);
+  }
+};
+
 export default function Finanzas() {
   const { user } = useAuth();
   const [auditLogs, setAuditLogs] = useState([]);
@@ -64,7 +95,7 @@ export default function Finanzas() {
   const [formTransfBoveda, setFormTransfBoveda] = useState({ socio: 'Davilson', monto: '', motivo: 'Transferencia de ahorro Bóveda' });
   const [formGastoBoveda, setFormGastoBoveda] = useState({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
 
-  // === FETCH INICIAL DE DATOS ===
+  // === FETCH INICIAL DE DATOS CON ORDEN CRONOLÓGICO ESTRICTO ===
   const fetchData = useCallback(async () => {
     try {
       // Cargar porcentaje de bóveda de localStorage o Supabase
@@ -86,27 +117,27 @@ export default function Finanzas() {
       }
 
       const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
-        supabase.from('finanzas_ingresos').select('*').order('fecha', { ascending: false }),
-        supabase.from('finanzas_gastos').select('*').order('fecha', { ascending: false }),
-        supabase.from('finanzas_gastos_fijos').select('*'),
-        supabase.from('finanzas_compras_tdc').select('*'),
-        supabase.from('finanzas_deudas').select('*'),
-        supabase.from('finanzas_retiros').select('*').order('fecha', { ascending: false }),
-        supabase.from('transacciones_finanzas').select('*'),
-        supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos'),
-        supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(20)
+        supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_compras_tdc').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
+        supabase.from('transacciones_finanzas').select('*').order('created_at', { ascending: false }),
+        supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos, created_at').order('created_at', { ascending: false }),
+        supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(25)
       ]);
 
       if (audit && audit.data) setAuditLogs(audit.data);
 
-      const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
-      const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
-      const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro });
-      const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
-      const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
-      const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
-      const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
-      const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia' });
+      const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at || r.fecha });
+      const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo, created_at: r.created_at || r.fecha });
+      const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro, created_at: r.created_at });
+      const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at });
+      const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite, created_at: r.created_at });
+      const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at || r.fecha });
+      const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, created_at: r.created_at || r.fecha_pago });
+      const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia', created_at: r.created_at || r.fecha_pago });
 
       let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
       let fetchedGastos = gas.data ? gas.data.map(mapGas) : [];
@@ -145,7 +176,8 @@ export default function Finanzas() {
                 cliente: 'Directorio (Sincronizado)',
                 tipo: 'Operativo',
                 monto: Number(row.contrato_valor) || 0,
-                fecha: new Date().toISOString().split('T')[0]
+                fecha: new Date().toISOString().split('T')[0],
+                created_at: row.created_at || new Date().toISOString()
               });
             }
           }
@@ -201,7 +233,7 @@ export default function Finanzas() {
     totalIngresos, totalGastosEfectivo, utilidadBrutaMes, 
     fondoReinversionMes, fondoTotalBoveda, 
     saldoDavilson, saldoSantiago,
-    totalTDC, totalGastosBoveda, totalTransfBoveda
+    totalTDC
   } = useMemo(() => {
     const tIngresos = ingresos.reduce((acc, curr) => acc + Number(curr.monto), 0);
     
@@ -249,15 +281,13 @@ export default function Finanzas() {
       utilidadBrutaMes: uBruta,
       fondoReinversionMes: fReinversion,
       fondoTotalBoveda: fBovedaTotal,
-      totalGastosBoveda: gastosBoveda,
-      totalTransfBoveda: tTransfBoveda,
       saldoDavilson: sDavilson,
       saldoSantiago: sSantiago,
       totalTDC: tTDC
     };
   }, [ingresos, gastos, gastosFijos, comprasTDC, retiros, transferenciasBoveda, porcentajeBoveda]);
 
-  // === LIBRO MAYOR: MOVIMIENTOS UNIFICADOS ===
+  // === LIBRO MAYOR: MOVIMIENTOS UNIFICADOS ORDENADOS POR CREATED_AT DESC ===
   const libroMayor = useMemo(() => {
     const list = [];
 
@@ -266,6 +296,7 @@ export default function Finanzas() {
       list.push({
         id: 'ing_' + i.id,
         fecha: i.fecha || 'Reciente',
+        created_at: i.created_at || i.fecha,
         tipo: 'Ingreso',
         categoria: i.tipo || 'Operativo',
         concepto: i.concepto,
@@ -281,6 +312,7 @@ export default function Finanzas() {
       list.push({
         id: 'gas_' + g.id,
         fecha: g.fecha || 'Reciente',
+        created_at: g.created_at || g.fecha,
         tipo: isBoveda ? 'Gasto Bóveda' : 'Gasto General',
         categoria: g.categoria || 'Variables',
         concepto: g.concepto,
@@ -295,6 +327,7 @@ export default function Finanzas() {
       list.push({
         id: 'ret_' + r.id,
         fecha: r.fecha || 'Reciente',
+        created_at: r.created_at || r.fecha,
         tipo: 'Retiro Socio',
         categoria: 'Reparto Utilidades',
         concepto: `Retiro de utilidades - ${r.socio}`,
@@ -309,6 +342,7 @@ export default function Finanzas() {
       list.push({
         id: 'trb_' + t.id,
         fecha: t.fecha || 'Reciente',
+        created_at: t.created_at || t.fecha,
         tipo: 'Transf. Bóveda',
         categoria: 'Transferencia Interna',
         concepto: t.motivo || `Transferencia Bóveda → ${t.socio}`,
@@ -318,8 +352,12 @@ export default function Finanzas() {
       });
     });
 
-    // Ordenar por fecha descendente
-    return list.sort((a, b) => (b.fecha > a.fecha ? 1 : -1));
+    // Orden cronológico estricto por timestamp (created_at DESC)
+    return list.sort((a, b) => {
+      const timeA = new Date(a.created_at || a.fecha).getTime();
+      const timeB = new Date(b.created_at || b.fecha).getTime();
+      return timeB - timeA;
+    });
   }, [ingresos, gastos, retiros, transferenciasBoveda]);
 
   // Filtrado del Libro Mayor
@@ -349,7 +387,7 @@ export default function Finanzas() {
     const payload = { concepto: formIngreso.concepto, cliente: formIngreso.cliente, tipo: formIngreso.tipo, monto: Number(formIngreso.monto), fecha: formIngreso.fecha };
     const { data } = await supabase.from('finanzas_ingresos').insert([payload]).select();
     if (data && data.length > 0) {
-      setIngresos([{ id: data[0].id, ...payload }, ...ingresos]);
+      setIngresos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...ingresos]);
       logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - $${payload.monto}`);
     }
     setModalIngreso(false);
@@ -360,12 +398,12 @@ export default function Finanzas() {
     const payload = { concepto: formGasto.concepto, categoria: formGasto.categoria, monto: Number(formGasto.monto), fecha: formGasto.fecha };
     if (formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Crédito') {
       const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
-      if (data && data.length > 0) setComprasTDC([{ id: data[0].id, ...payload }, ...comprasTDC]);
+      if (data && data.length > 0) setComprasTDC([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...comprasTDC]);
     } else {
       payload.metodo = formGasto.metodo;
       const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
       if (data && data.length > 0) {
-        setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+        setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
         logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto (${payload.metodo}): ${payload.concepto} - $${payload.monto}`);
       }
     }
@@ -377,7 +415,7 @@ export default function Finanzas() {
     const payload = { concepto: formFijo.concepto, categoria: formFijo.categoria, monto: Number(formFijo.monto), fecha_inicio: formFijo.fechaInicio, dia_cobro: formFijo.diaCobro };
     const { data } = await supabase.from('finanzas_gastos_fijos').insert([payload]).select();
     if (data && data.length > 0) {
-      setGastosFijos([...gastosFijos, { id: data[0].id, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]);
+      setGastosFijos([...gastosFijos, { id: data[0].id, created_at: data[0].created_at, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]);
       logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Fijo: ${payload.concepto} - $${payload.monto}`);
     }
     setModalFijo(false);
@@ -387,7 +425,7 @@ export default function Finanzas() {
     e.preventDefault();
     const payload = { concepto: formDeuda.concepto, monto: Number(formDeuda.monto), fecha_limite: formDeuda.fechaLimite };
     const { data } = await supabase.from('finanzas_deudas').insert([payload]).select();
-    if (data && data.length > 0) setDeudasPendientes([...deudasPendientes, { id: data[0].id, concepto: payload.concepto, monto: payload.monto, fechaLimite: payload.fecha_limite }]);
+    if (data && data.length > 0) setDeudasPendientes([...deudasPendientes, { id: data[0].id, created_at: data[0].created_at, concepto: payload.concepto, monto: payload.monto, fechaLimite: payload.fecha_limite }]);
     setModalDeuda(false);
   };
 
@@ -397,7 +435,7 @@ export default function Finanzas() {
     const payload = { socio: formRetiro.socio, monto: Number(formRetiro.monto), fecha: new Date().toISOString().split('T')[0] };
     const { data } = await supabase.from('finanzas_retiros').insert([payload]).select();
     if (data && data.length > 0) {
-      setRetiros([...retiros, { id: data[0].id, socio: payload.socio, monto: payload.monto, fecha: payload.fecha }]);
+      setRetiros([{ id: data[0].id, created_at: data[0].created_at, socio: payload.socio, monto: payload.monto, fecha: payload.fecha }, ...retiros]);
       logAuditoria(user, 'Finanzas', 'CREAR', `Retiro de utilidades: ${payload.socio} - $${payload.monto}`);
     }
     setModalRetiro(false);
@@ -455,7 +493,7 @@ export default function Finanzas() {
 
     const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
     if (data && data.length > 0) {
-      setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+      setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
       logAuditoria(
         user,
         'Finanzas',
@@ -469,7 +507,8 @@ export default function Finanzas() {
   };
 
   const pagarDeudaTercero = (deuda) => {
-    setGastos([{ id: Date.now(), concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Impuestos', monto: deuda.monto, fecha: new Date().toISOString().split('T')[0] }, ...gastos]);
+    const nowIso = new Date().toISOString();
+    setGastos([{ id: Date.now(), concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Impuestos', monto: deuda.monto, fecha: nowIso.split('T')[0], created_at: nowIso }, ...gastos]);
     setDeudasPendientes(deudasPendientes.filter(d => d.id !== deuda.id));
   };
 
@@ -480,7 +519,7 @@ export default function Finanzas() {
     const payload = { concepto: 'Pago Tarjeta de Crédito', categoria: 'Intereses', monto: tTDC, fecha: dateStr, metodo: 'Efectivo/Transferencia' };
     
     const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-    if (data && data.length > 0) setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+    if (data && data.length > 0) setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
 
     for (const c of comprasTDC) {
       await supabase.from('finanzas_compras_tdc').delete().eq('id', c.id);
@@ -544,7 +583,7 @@ export default function Finanzas() {
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-zodiak font-bold text-gloss-burgundy dark:text-gloss-inverted">Dashboard Financiero</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Control maestro contable, flujos de caja, bóveda de agencia y libro mayor</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Control maestro contable, flujos de caja, bóveda de agencia y libro mayor cronológico</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setModalGasto(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-bold transition-colors text-xs">
@@ -702,16 +741,16 @@ export default function Finanzas() {
           </div>
         </div>
 
-        <div className="overflow-x-auto max-h-[380px] overflow-y-auto custom-scrollbar">
-          <table className="w-full text-left text-xs min-w-[700px]">
-            <thead className="bg-gray-50/80 dark:bg-gray-900/60 text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold text-[10px] sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
+        <div className="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left text-xs min-w-[750px]">
+            <thead className="bg-gray-50/90 dark:bg-gray-900/80 text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold text-[10px] sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
               <tr>
-                <th className="py-3 px-4">Fecha</th>
-                <th className="py-3 px-4">Tipo</th>
-                <th className="py-3 px-4">Categoría</th>
-                <th className="py-3 px-4">Concepto</th>
-                <th className="py-3 px-4">Origen / Destino</th>
-                <th className="py-3 px-4 text-right">Monto (COP)</th>
+                <th className="py-3.5 px-4">Fecha y Hora Exacta</th>
+                <th className="py-3.5 px-4">Tipo</th>
+                <th className="py-3.5 px-4">Categoría</th>
+                <th className="py-3.5 px-4">Concepto</th>
+                <th className="py-3.5 px-4">Origen / Destino</th>
+                <th className="py-3.5 px-4 text-right">Monto (COP)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -724,7 +763,9 @@ export default function Finanzas() {
               ) : (
                 filteredLibroMayor.map((m) => (
                   <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors">
-                    <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{m.fecha}</td>
+                    <td className="py-3 px-4 font-mono font-medium text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {formatTimestamp(m.created_at, m.fecha)}
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
                         m.tipo === 'Ingreso' 
@@ -782,7 +823,7 @@ export default function Finanzas() {
           </div>
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-sm min-w-[500px]">
-              <tbody className="divide-y divide-gray-100 dark:border-gray-800">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {comprasTDC.length === 0 && <tr><td className="p-6 text-center text-gray-500">No hay deudas en TDC</td></tr>}
                 {comprasTDC.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
@@ -809,7 +850,7 @@ export default function Finanzas() {
           </div>
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-sm min-w-[500px]">
-              <tbody className="divide-y divide-gray-100 dark:border-gray-800">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {deudasPendientes.length === 0 && <tr><td className="p-6 text-center text-gray-500">Sin deudas a terceros</td></tr>}
                 {deudasPendientes.map(d => (
                   <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
