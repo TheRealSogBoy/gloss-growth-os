@@ -381,9 +381,27 @@ export default function ConfigModal({ isOpen, onClose }) {
                                   ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-300'
                                   : m.rol === 'comercial'
                                   ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-300'
-                                  : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300'
+                                  : m.rol === 'media_buyer'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300'
+                                  : m.rol === 'edicion_multimedia'
+                                  ? 'bg-fuchsia-100 dark:bg-fuchsia-950/60 text-fuchsia-800 dark:text-fuchsia-300 border-fuchsia-300'
+                                  : m.rol === 'closer'
+                                  ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border-indigo-300'
+                                  : m.rol === 'setter'
+                                  ? 'bg-cyan-100 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border-cyan-300'
+                                  : m.rol === 'lavaculos'
+                                  ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300'
+                                  : m.rol === 'junior'
+                                  ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-300'
+                                  : m.rol === 'social_media'
+                                  ? 'bg-violet-100 dark:bg-violet-950/60 text-violet-800 dark:text-violet-300 border-violet-300'
+                                  : m.rol === 'comunicaciones'
+                                  ? 'bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300 border-teal-300'
+                                  : m.rol === 'ugc'
+                                  ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 border-orange-300'
+                                  : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300 border-gray-300'
                               }`}>
-                                {m.rol}
+                                {m.rol === 'edicion_multimedia' ? 'Edición Multimedia' : m.rol === 'social_media' ? 'Social Media' : m.rol}
                               </span>
                             </td>
 
@@ -647,6 +665,14 @@ export default function ConfigModal({ isOpen, onClose }) {
                   <option value="socio">Socio / Director</option>
                   <option value="comercial">Equipo Comercial / Ventas</option>
                   <option value="media_buyer">Media Buyer / Trafficker</option>
+                  <option value="edicion_multimedia">Edición Multimedia</option>
+                  <option value="closer">Closer</option>
+                  <option value="setter">Setter</option>
+                  <option value="lavaculos">Lavaculos</option>
+                  <option value="junior">Junior</option>
+                  <option value="social_media">Social Media</option>
+                  <option value="comunicaciones">Comunicaciones</option>
+                  <option value="ugc">UGC</option>
                   <option value="superadmin">SuperAdmin</option>
                 </select>
               </div>
