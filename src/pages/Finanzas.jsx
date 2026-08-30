@@ -1,148 +1,188 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
-import { Activity } from 'lucide-react';
 import { 
   Plus, Trash2, TrendingUp, TrendingDown, PiggyBank, Users, Wallet, 
   RefreshCw, Landmark, ArrowDownCircle, ArrowUpCircle, CreditCard, 
-  Clock, CheckCircle, AlertTriangle
+  Clock, CheckCircle, AlertTriangle, Pencil, Check, X, ArrowRight,
+  BookOpen, Filter, Search, Activity, Sparkles, Send
 } from 'lucide-react';
 
-// === Constants Removed ===
+export const CATEGORIAS_GASTOS = [
+  "Edicion de videos",
+  "Diseño grafico",
+  "Nómina",
+  "Desarrollo Web",
+  "Suscripciones",
+  "Tokens",
+  "Intereses",
+  "SaaS",
+  "Servicios",
+  "Pauta Digital",
+  "Impuestos"
+];
 
 export default function Finanzas() {
   const { user } = useAuth();
   const [auditLogs, setAuditLogs] = useState([]);
   const [showAudit, setShowAudit] = useState(false);
-  // === ESTADOS (Listas de datos) ===
-  
-  
-  
-  
-  
-  
+
+  // === ESTADOS DE DATOS ===
   const [ingresos, setIngresos] = useState([]);
   const [gastos, setGastos] = useState([]);
   const [gastosFijos, setGastosFijos] = useState([]);
   const [comprasTDC, setComprasTDC] = useState([]);
   const [deudasPendientes, setDeudasPendientes] = useState([]);
   const [retiros, setRetiros] = useState([]);
+  const [transferenciasBoveda, setTransferenciasBoveda] = useState([]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        
-          // Obtener de todas las tablas (retrocompatibilidad) y de transacciones_finanzas
-          const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
-            supabase.from('finanzas_ingresos').select('*'),
-            supabase.from('finanzas_gastos').select('*'),
-            supabase.from('finanzas_gastos_fijos').select('*'),
-            supabase.from('finanzas_compras_tdc').select('*'),
-            supabase.from('finanzas_deudas').select('*'),
-                          supabase.from('finanzas_retiros').select('*'),
-              supabase.from('transacciones_finanzas').select('*'),
-              supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos'),
-              supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(20)
-            ]);
-            
-            if (audit && audit.data) setAuditLogs(audit.data);
-          
-          const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
-          const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
-          const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro });
-          const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
-          const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
-          const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
-          const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
-          const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia' });
+  // === CONFIGURACIÓN DINÁMICA DE BÓVEDA ===
+  const [porcentajeBoveda, setPorcentajeBoveda] = useState(15);
+  const [isEditingPct, setIsEditingPct] = useState(false);
+  const [tempPct, setTempPct] = useState(15);
 
-          let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
-          let fetchedGastos = gas.data ? gas.data.map(mapGas) : [];
+  // === FILTRO LIBRO MAYOR ===
+  const [filtroLibro, setFiltroLibro] = useState('todos'); // 'todos' | 'ingresos' | 'gastos' | 'boveda_socios'
+  const [searchLibro, setSearchLibro] = useState('');
 
-          if (tf.data) {
-             const tfIngresos = tf.data.filter(t => t.tipo === 'ingreso').map(mapTfIngreso);
-             const tfGastos = tf.data.filter(t => t.tipo === 'gasto').map(mapTfGasto);
-             fetchedIngresos = [...fetchedIngresos, ...tfIngresos];
-             fetchedGastos = [...fetchedGastos, ...tfGastos];
-          }
-
-          // --- SINCRONIZACIÓN AUTOMÁTICA DE CLIENTES ---
-          if (cl.data) {
-            cl.data.forEach(row => {
-              // En Finanzas, cl.data es el arreglo crudo de la BD (sin mapToForm)
-              const planPagos = row.plan_pagos || [];
-              const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
-              const isPagado100 = planPagos.length > 0 && cuotasPendientes.length === 0;
-
-              // Alternativa legacy por si el usuario lo ve como "Al día"
-              const hoy = new Date();
-              const mesActual = hoy.getMonth();
-              const añoActual = hoy.getFullYear();
-              const historialPagos = row.historial_pagos || [];
-              const haPagadoEsteMes = historialPagos.some(p => {
-                if(!p.fecha) return false;
-                const [year, month] = p.fecha.split('-');
-                return Number(month) - 1 === mesActual && Number(year) === añoActual;
-              });
-
-              // Si está 100% pagado (por cuotas) o si es pago de mes legacy, sumarlo virtualmente
-              if ((isPagado100 || haPagadoEsteMes) && row.contrato_valor) {
-                // Verificar si ya existe en fetchedIngresos
-                const hasTx = fetchedIngresos.some(i => i.cliente_id === row.id || (i.concepto && i.concepto.includes(row.negocio_nombre)));
-                
-                if (!hasTx) {
-                  // Agregar transacción virtual al estado para que sume
-                  fetchedIngresos.push({
-                    id: 'virtual_' + row.id,
-                    cliente_id: row.id,
-                    concepto: `Cobro mensual - ${row.negocio_nombre || 'Cliente'}`,
-                    cliente: 'Directorio (Virtual)',
-                    tipo: 'Operativo',
-                    monto: Number(row.contrato_valor) || 0,
-                    fecha: new Date().toISOString().split('T')[0]
-                  });
-                }
-              }
-            });
-          }
-
-          setIngresos(fetchedIngresos);
-          setGastos(fetchedGastos);
-
-          const fetchedGastosFijos = gf.data ? gf.data.map(item => ({
-            id: item.id,
-            concepto: item.concepto,
-            categoria: item.categoria,
-            monto: Number(item.monto),
-            fechaInicio: item.fecha_inicio,
-            diaCobro: item.dia_cobro
-          })) : [];
-          setGastosFijos(fetchedGastosFijos);
-
-
-
-      } catch (err) {
-        console.error('Error fetching finanzas', err);
-      }
-    };
-    fetchData();
-  }, []);
-
-
-  // === ESTADOS (Modales) ===
+  // === ESTADOS DE MODALES ===
   const [modalIngreso, setModalIngreso] = useState(false);
   const [modalGasto, setModalGasto] = useState(false);
   const [modalFijo, setModalFijo] = useState(false);
   const [modalDeuda, setModalDeuda] = useState(false);
   const [modalRetiro, setModalRetiro] = useState(false);
+  const [modalBoveda, setModalBoveda] = useState(false);
+  const [tabBoveda, setTabBoveda] = useState('transferir'); // 'transferir' | 'gasto'
 
-  // === ESTADOS (Formularios) ===
-  const [formIngreso, setFormIngreso] = useState({ concepto: '', cliente: '', tipo: 'Retainer', monto: '', fecha: '' });
-  const [formGasto, setFormGasto] = useState({ concepto: '', categoria: 'Variables', monto: '', fecha: '', metodo: 'Caja General' });
-  const [formFijo, setFormFijo] = useState({ concepto: '', categoria: 'SaaS', monto: '', fechaInicio: '', diaCobro: 1 });
+  // === ESTADOS DE FORMULARIOS ===
+  const [formIngreso, setFormIngreso] = useState({ concepto: '', cliente: '', tipo: 'Retainer', monto: '', fecha: new Date().toISOString().split('T')[0] });
+  const [formGasto, setFormGasto] = useState({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Caja General' });
+  const [formFijo, setFormFijo] = useState({ concepto: '', categoria: 'SaaS', monto: '', fechaInicio: new Date().toISOString().split('T')[0], diaCobro: 1 });
   const [formDeuda, setFormDeuda] = useState({ concepto: '', monto: '', fechaLimite: '' });
   const [formRetiro, setFormRetiro] = useState({ socio: 'Davilson', monto: '' });
+  const [formTransfBoveda, setFormTransfBoveda] = useState({ socio: 'Davilson', monto: '', motivo: 'Transferencia de ahorro Bóveda' });
+  const [formGastoBoveda, setFormGastoBoveda] = useState({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
+
+  // === FETCH INICIAL DE DATOS ===
+  const fetchData = useCallback(async () => {
+    try {
+      // Cargar porcentaje de bóveda de localStorage o Supabase
+      const savedPct = localStorage.getItem('gloss_porcentaje_boveda');
+      if (savedPct) {
+        const parsed = Number(savedPct);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+          setPorcentajeBoveda(parsed);
+          setTempPct(parsed);
+        }
+      }
+
+      // Cargar transferencias de bóveda de localStorage
+      const savedTransf = localStorage.getItem('gloss_transferencias_boveda');
+      if (savedTransf) {
+        try {
+          setTransferenciasBoveda(JSON.parse(savedTransf));
+        } catch (e) {}
+      }
+
+      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
+        supabase.from('finanzas_ingresos').select('*').order('fecha', { ascending: false }),
+        supabase.from('finanzas_gastos').select('*').order('fecha', { ascending: false }),
+        supabase.from('finanzas_gastos_fijos').select('*'),
+        supabase.from('finanzas_compras_tdc').select('*'),
+        supabase.from('finanzas_deudas').select('*'),
+        supabase.from('finanzas_retiros').select('*').order('fecha', { ascending: false }),
+        supabase.from('transacciones_finanzas').select('*'),
+        supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos'),
+        supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(20)
+      ]);
+
+      if (audit && audit.data) setAuditLogs(audit.data);
+
+      const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
+      const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
+      const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro });
+      const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha });
+      const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite });
+      const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha });
+      const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at });
+      const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia' });
+
+      let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
+      let fetchedGastos = gas.data ? gas.data.map(mapGas) : [];
+
+      if (tf.data) {
+        const tfIngresos = tf.data.filter(t => t.tipo === 'ingreso').map(mapTfIngreso);
+        const tfGastos = tf.data.filter(t => t.tipo === 'gasto').map(mapTfGasto);
+        fetchedIngresos = [...fetchedIngresos, ...tfIngresos];
+        fetchedGastos = [...fetchedGastos, ...tfGastos];
+      }
+
+      // Sincronización automática con clientes con pago activo
+      if (cl.data) {
+        cl.data.forEach(row => {
+          const planPagos = row.plan_pagos || [];
+          const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
+          const isPagado100 = planPagos.length > 0 && cuotasPendientes.length === 0;
+
+          const hoy = new Date();
+          const mesActual = hoy.getMonth();
+          const añoActual = hoy.getFullYear();
+          const historialPagos = row.historial_pagos || [];
+          const haPagadoEsteMes = historialPagos.some(p => {
+            if (!p.fecha) return false;
+            const [year, month] = p.fecha.split('-');
+            return Number(month) - 1 === mesActual && Number(year) === añoActual;
+          });
+
+          if ((isPagado100 || haPagadoEsteMes) && row.contrato_valor) {
+            const hasTx = fetchedIngresos.some(i => i.cliente_id === row.id || (i.concepto && i.concepto.includes(row.negocio_nombre)));
+            if (!hasTx) {
+              fetchedIngresos.push({
+                id: 'virtual_' + row.id,
+                cliente_id: row.id,
+                concepto: `Cobro mensual - ${row.negocio_nombre || 'Cliente'}`,
+                cliente: 'Directorio (Sincronizado)',
+                tipo: 'Operativo',
+                monto: Number(row.contrato_valor) || 0,
+                fecha: new Date().toISOString().split('T')[0]
+              });
+            }
+          }
+        });
+      }
+
+      setIngresos(fetchedIngresos);
+      setGastos(fetchedGastos);
+      setGastosFijos(gf.data ? gf.data.map(mapFij) : []);
+      setComprasTDC(tdc.data ? tdc.data.map(mapTdc) : []);
+      setDeudasPendientes(deu.data ? deu.data.map(mapDeu) : []);
+      setRetiros(ret.data ? ret.data.map(mapRet) : []);
+
+    } catch (err) {
+      console.error('Error fetching finanzas', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // === GUARDAR PORCENTAJE DE BÓVEDA ===
+  const handleSavePorcentaje = async () => {
+    const val = Number(tempPct);
+    if (isNaN(val) || val < 0 || val > 100) {
+      alert('Por favor ingresa un porcentaje válido entre 0 y 100.');
+      return;
+    }
+    setPorcentajeBoveda(val);
+    setIsEditingPct(false);
+    localStorage.setItem('gloss_porcentaje_boveda', String(val));
+    try {
+      await supabase.from('finanzas_config').upsert([{ id: 'default', porcentaje_boveda: val }]);
+    } catch (e) {}
+    logAuditoria(user, 'Finanzas', 'EDITAR', `Porcentaje de Bóveda actualizado a ${val}%`);
+  };
 
   // === HELPER: Días hasta cobro recurrente ===
   const getDaysUntil = (diaCobro) => {
@@ -161,71 +201,174 @@ export default function Finanzas() {
     totalIngresos, totalGastosEfectivo, utilidadBrutaMes, 
     fondoReinversionMes, fondoTotalBoveda, 
     saldoDavilson, saldoSantiago,
-    totalTDC
+    totalTDC, totalGastosBoveda, totalTransfBoveda
   } = useMemo(() => {
-    // Ingresos
     const tIngresos = ingresos.reduce((acc, curr) => acc + Number(curr.monto), 0);
-    // Gastos que afectan caja (Efectivo/Transferencia + Recurrentes)
-      const tGastosVar = gastos.filter(g => !['Bóveda de Agencia', 'Cuenta Davilson', 'Cuenta Santiago'].includes(g.metodo)).reduce((acc, curr) => acc + Number(curr.monto), 0);
-      const tGastosFijos = gastosFijos.reduce((acc, curr) => acc + Number(curr.monto), 0);
-      const tGastosCaja = tGastosVar + tGastosFijos; 
-      
-      // Gastos pagados con fondos específicos
-      const gastosBoveda = gastos.filter(g => g.metodo === 'Bóveda de Agencia').reduce((acc, curr) => acc + Number(curr.monto), 0);
-      const gastosDavilson = gastos.filter(g => g.metodo === 'Cuenta Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
-      const gastosSantiago = gastos.filter(g => g.metodo === 'Cuenta Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    
+    // Gastos que afectan caja general
+    const tGastosVar = gastos.filter(g => !['Bóveda de Agencia', 'Cuenta Davilson', 'Cuenta Santiago'].includes(g.metodo)).reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tGastosFijos = gastosFijos.reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tGastosCaja = tGastosVar + tGastosFijos; 
+    
+    // Gastos pagados con fondos específicos
+    const gastosBoveda = gastos.filter(g => g.metodo === 'Bóveda de Agencia').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const gastosDavilson = gastos.filter(g => g.metodo === 'Cuenta Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const gastosSantiago = gastos.filter(g => g.metodo === 'Cuenta Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
 
-      // Deuda TDC acumulada (No resta de la utilidad hasta que se pague)
-      const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
-  
-      // Utilidad Bruta (Ingresos reales - Gastos de caja reales)
-      const uBruta = tIngresos - tGastosCaja;
-      
-      // Distribución
-      // 15% intocable sobre los ingresos reales brutos? No, la instrucción dice "sobre los ingresos brutos reales ($3.500.000 * 0.15 = $525.000)"
-      const fReinversion = tIngresos * 0.15; 
-      
-      // Utilidad Distribuible = Utilidad Bruta - 15% de Ingresos Brutos (que van a bóveda)
-      const uDistribuible = uBruta > 0 ? (uBruta - fReinversion) : 0;
-      const gananciaSocio = uDistribuible > 0 ? (uDistribuible * 0.50) : 0;
-  
-      // Retiros
-      const retirosDavilson = retiros.filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
-      const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
-  
-      return {
-        totalIngresos: tIngresos,
-        totalGastosEfectivo: tGastosCaja,
-        utilidadBrutaMes: uBruta,
-        fondoReinversionMes: fReinversion,
-        fondoTotalBoveda: fReinversion - gastosBoveda,
-        saldoDavilson: gananciaSocio - retirosDavilson - gastosDavilson,
-        saldoSantiago: gananciaSocio - retirosSantiago - gastosSantiago,
-        totalTDC: tTDC
-      };
-  }, [ingresos, gastos, gastosFijos, comprasTDC, retiros]);
+    // Transferencias desde Bóveda a socios
+    const transfDavilson = transferenciasBoveda.filter(t => t.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const transfSantiago = transferenciasBoveda.filter(t => t.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tTransfBoveda = transfDavilson + transfSantiago;
 
-  // === MANEJADORES DE SUBMIT ===
-  
+    const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
+
+    // Utilidad Bruta (Ingresos reales - Gastos de caja reales)
+    const uBruta = tIngresos - tGastosCaja;
+    
+    // Ahorro dinámico Bóveda sobre ingresos reales brutos
+    const fReinversion = tIngresos * (porcentajeBoveda / 100); 
+    
+    // Utilidad Distribuible = Utilidad Bruta - Ahorro Bóveda
+    const uDistribuible = uBruta > 0 ? Math.max(0, uBruta - fReinversion) : 0;
+    const gananciaSocio = uDistribuible > 0 ? (uDistribuible * 0.50) : 0;
+
+    // Retiros
+    const retirosDavilson = retiros.filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+
+    // Saldo Final Bóveda: Ahorro acumulado - gastos pagados con bóveda - transferencias a socios
+    const fBovedaTotal = fReinversion - gastosBoveda - tTransfBoveda;
+
+    // Saldo Socios: Ganancia base + transferencias de bóveda - retiros - gastos personales
+    const sDavilson = gananciaSocio + transfDavilson - retirosDavilson - gastosDavilson;
+    const sSantiago = gananciaSocio + transfSantiago - retirosSantiago - gastosSantiago;
+
+    return {
+      totalIngresos: tIngresos,
+      totalGastosEfectivo: tGastosCaja,
+      utilidadBrutaMes: uBruta,
+      fondoReinversionMes: fReinversion,
+      fondoTotalBoveda: fBovedaTotal,
+      totalGastosBoveda: gastosBoveda,
+      totalTransfBoveda: tTransfBoveda,
+      saldoDavilson: sDavilson,
+      saldoSantiago: sSantiago,
+      totalTDC: tTDC
+    };
+  }, [ingresos, gastos, gastosFijos, comprasTDC, retiros, transferenciasBoveda, porcentajeBoveda]);
+
+  // === LIBRO MAYOR: MOVIMIENTOS UNIFICADOS ===
+  const libroMayor = useMemo(() => {
+    const list = [];
+
+    // 1. Ingresos
+    ingresos.forEach(i => {
+      list.push({
+        id: 'ing_' + i.id,
+        fecha: i.fecha || 'Reciente',
+        tipo: 'Ingreso',
+        categoria: i.tipo || 'Operativo',
+        concepto: i.concepto,
+        origenDestino: i.cliente || 'Caja General',
+        monto: Number(i.monto),
+        esPositivo: true
+      });
+    });
+
+    // 2. Gastos
+    gastos.forEach(g => {
+      const isBoveda = g.metodo === 'Bóveda de Agencia';
+      list.push({
+        id: 'gas_' + g.id,
+        fecha: g.fecha || 'Reciente',
+        tipo: isBoveda ? 'Gasto Bóveda' : 'Gasto General',
+        categoria: g.categoria || 'Variables',
+        concepto: g.concepto,
+        origenDestino: g.metodo || 'Caja General',
+        monto: Number(g.monto),
+        esPositivo: false
+      });
+    });
+
+    // 3. Retiros de socios
+    retiros.forEach(r => {
+      list.push({
+        id: 'ret_' + r.id,
+        fecha: r.fecha || 'Reciente',
+        tipo: 'Retiro Socio',
+        categoria: 'Reparto Utilidades',
+        concepto: `Retiro de utilidades - ${r.socio}`,
+        origenDestino: `Cuenta ${r.socio}`,
+        monto: Number(r.monto),
+        esPositivo: false
+      });
+    });
+
+    // 4. Transferencias de Bóveda
+    transferenciasBoveda.forEach(t => {
+      list.push({
+        id: 'trb_' + t.id,
+        fecha: t.fecha || 'Reciente',
+        tipo: 'Transf. Bóveda',
+        categoria: 'Transferencia Interna',
+        concepto: t.motivo || `Transferencia Bóveda → ${t.socio}`,
+        origenDestino: `Bóveda → ${t.socio}`,
+        monto: Number(t.monto),
+        esTransferencia: true
+      });
+    });
+
+    // Ordenar por fecha descendente
+    return list.sort((a, b) => (b.fecha > a.fecha ? 1 : -1));
+  }, [ingresos, gastos, retiros, transferenciasBoveda]);
+
+  // Filtrado del Libro Mayor
+  const filteredLibroMayor = useMemo(() => {
+    return libroMayor.filter(m => {
+      if (filtroLibro === 'ingresos' && m.tipo !== 'Ingreso') return false;
+      if (filtroLibro === 'gastos' && !['Gasto General', 'Gasto Bóveda'].includes(m.tipo)) return false;
+      if (filtroLibro === 'boveda_socios' && !['Gasto Bóveda', 'Retiro Socio', 'Transf. Bóveda'].includes(m.tipo)) return false;
+
+      if (searchLibro) {
+        const query = searchLibro.toLowerCase();
+        return (
+          m.concepto?.toLowerCase().includes(query) ||
+          m.categoria?.toLowerCase().includes(query) ||
+          m.origenDestino?.toLowerCase().includes(query) ||
+          m.tipo?.toLowerCase().includes(query)
+        );
+      }
+      return true;
+    });
+  }, [libroMayor, filtroLibro, searchLibro]);
+
+  // === MANEJADORES DE ACCIONES ===
+
   const handleIngreso = async (e) => {
     e.preventDefault();
     const payload = { concepto: formIngreso.concepto, cliente: formIngreso.cliente, tipo: formIngreso.tipo, monto: Number(formIngreso.monto), fecha: formIngreso.fecha };
     const { data } = await supabase.from('finanzas_ingresos').insert([payload]).select();
-    if (data && data.length > 0) setIngresos([{ id: data[0].id, ...payload }, ...ingresos]);
+    if (data && data.length > 0) {
+      setIngresos([{ id: data[0].id, ...payload }, ...ingresos]);
+      logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - $${payload.monto}`);
+    }
     setModalIngreso(false);
   };
 
   const handleGasto = async (e) => {
     e.preventDefault();
     const payload = { concepto: formGasto.concepto, categoria: formGasto.categoria, monto: Number(formGasto.monto), fecha: formGasto.fecha };
-    if (formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Cr\u00e9dito') {
-        const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
-        if (data && data.length > 0) setComprasTDC([{ id: data[0].id, ...payload }, ...comprasTDC]);
-      } else {
-        payload.metodo = formGasto.metodo;
-        const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-        if (data && data.length > 0) { setGastos([{ id: data[0].id, ...payload }, ...gastos]); logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto: ${payload.concepto} - ${payload.monto}`); }
+    if (formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Crédito') {
+      const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
+      if (data && data.length > 0) setComprasTDC([{ id: data[0].id, ...payload }, ...comprasTDC]);
+    } else {
+      payload.metodo = formGasto.metodo;
+      const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
+      if (data && data.length > 0) {
+        setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+        logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto (${payload.metodo}): ${payload.concepto} - $${payload.monto}`);
       }
+    }
     setModalGasto(false);
   };
 
@@ -234,7 +377,8 @@ export default function Finanzas() {
     const payload = { concepto: formFijo.concepto, categoria: formFijo.categoria, monto: Number(formFijo.monto), fecha_inicio: formFijo.fechaInicio, dia_cobro: formFijo.diaCobro };
     const { data } = await supabase.from('finanzas_gastos_fijos').insert([payload]).select();
     if (data && data.length > 0) {
-      setGastosFijos([...gastosFijos, { id: data[0].id, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]); logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Fijo: ${payload.concepto} - ${payload.monto}`);
+      setGastosFijos([...gastosFijos, { id: data[0].id, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]);
+      logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Fijo: ${payload.concepto} - $${payload.monto}`);
     }
     setModalFijo(false);
   };
@@ -252,16 +396,80 @@ export default function Finanzas() {
     if (Number(formRetiro.monto) <= 0) return;
     const payload = { socio: formRetiro.socio, monto: Number(formRetiro.monto), fecha: new Date().toISOString().split('T')[0] };
     const { data } = await supabase.from('finanzas_retiros').insert([payload]).select();
-    if (data && data.length > 0) setRetiros([...retiros, { id: data[0].id, socio: payload.socio, monto: payload.monto, fecha: payload.fecha }]);
+    if (data && data.length > 0) {
+      setRetiros([...retiros, { id: data[0].id, socio: payload.socio, monto: payload.monto, fecha: payload.fecha }]);
+      logAuditoria(user, 'Finanzas', 'CREAR', `Retiro de utilidades: ${payload.socio} - $${payload.monto}`);
+    }
     setModalRetiro(false);
   };
 
+  // Transferencia de Bóveda a Socio
+  const handleTransferenciaBoveda = async (e) => {
+    e.preventDefault();
+    const montoNum = Number(formTransfBoveda.monto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      alert('Ingresa un monto válido para transferir.');
+      return;
+    }
 
-  // === ACCIONES ESPECIALES ===
+    const newTransf = {
+      id: Date.now().toString(),
+      socio: formTransfBoveda.socio,
+      monto: montoNum,
+      motivo: formTransfBoveda.motivo || `Transferencia Bóveda → ${formTransfBoveda.socio}`,
+      fecha: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString()
+    };
+
+    const updated = [newTransf, ...transferenciasBoveda];
+    setTransferenciasBoveda(updated);
+    localStorage.setItem('gloss_transferencias_boveda', JSON.stringify(updated));
+
+    logAuditoria(
+      user,
+      'Finanzas',
+      'CREAR',
+      `Transferencia desde Bóveda a ${formTransfBoveda.socio} por $${montoNum}`
+    );
+
+    setModalBoveda(false);
+    setFormTransfBoveda({ socio: 'Davilson', monto: '', motivo: 'Transferencia de ahorro Bóveda' });
+  };
+
+  // Gasto directo desde Bóveda
+  const handleGastoBoveda = async (e) => {
+    e.preventDefault();
+    const montoNum = Number(formGastoBoveda.monto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      alert('Ingresa un monto válido para el gasto.');
+      return;
+    }
+
+    const payload = {
+      concepto: formGastoBoveda.concepto,
+      categoria: formGastoBoveda.categoria,
+      monto: montoNum,
+      fecha: formGastoBoveda.fecha,
+      metodo: 'Bóveda de Agencia'
+    };
+
+    const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
+    if (data && data.length > 0) {
+      setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+      logAuditoria(
+        user,
+        'Finanzas',
+        'CREAR',
+        `Gasto de Bóveda: ${payload.concepto} (${payload.categoria}) - $${payload.monto}`
+      );
+    }
+
+    setModalBoveda(false);
+    setFormGastoBoveda({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
+  };
+
   const pagarDeudaTercero = (deuda) => {
-    // Al pagar, se vuelve un gasto efectivo real que sale de la caja
-    setGastos([{ id: Date.now(), concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Pago Pasivos', monto: deuda.monto, fecha: new Date().toISOString().split('T')[0] }, ...gastos]);
-    // Y se elimina de pendientes
+    setGastos([{ id: Date.now(), concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Impuestos', monto: deuda.monto, fecha: new Date().toISOString().split('T')[0] }, ...gastos]);
     setDeudasPendientes(deudasPendientes.filter(d => d.id !== deuda.id));
   };
 
@@ -269,63 +477,62 @@ export default function Finanzas() {
     if (comprasTDC.length === 0) return;
     const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
     const dateStr = new Date().toISOString().split('T')[0];
-    const payload = { concepto: 'Pago Tarjeta de Crédito', categoria: 'Financiero', monto: tTDC, fecha: dateStr, metodo: 'Efectivo/Transferencia' };
+    const payload = { concepto: 'Pago Tarjeta de Crédito', categoria: 'Intereses', monto: tTDC, fecha: dateStr, metodo: 'Efectivo/Transferencia' };
     
-    // Convert to expense
     const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
     if (data && data.length > 0) setGastos([{ id: data[0].id, ...payload }, ...gastos]);
 
-    // Delete all TDC items
     for (const c of comprasTDC) {
       await supabase.from('finanzas_compras_tdc').delete().eq('id', c.id);
     }
     setComprasTDC([]);
   };
 
-  // Funciones genéricas de borrado
-  
   const deleteItem = async (tabla, setter, list, id) => {
-    await supabase.from(tabla).delete().eq('id', id); logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla}`);
+    await supabase.from(tabla).delete().eq('id', id);
+    logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla}`);
     setter(list.filter(item => item.id !== id));
   };
 
-
   // Formato Moneda
-  const formatCOP = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val);
+  const formatCOP = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val || 0);
 
-  // === UI COMPONENTS ===
+  // === COMPONENTE TARJETA DE SOCIO ===
   const SocioCard = ({ nombre, saldo }) => {
     const isNegative = saldo < 0;
     return (
-      <div className={`p-6 rounded-2xl border ${isNegative ? 'border-red-300 bg-red-50 dark:border-red-900/60 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black'} flex flex-col justify-between shadow-sm`}>
+      <div className={`p-6 rounded-3xl border ${isNegative ? 'border-red-300 bg-red-50/70 dark:border-red-900/60 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black'} flex flex-col justify-between shadow-sm`}>
         <div>
           <div className="flex justify-between items-start mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gloss-pink/30 flex items-center justify-center border border-gloss-pink text-gloss-burgundy font-bold">
+              <div className="w-10 h-10 rounded-2xl bg-gloss-pink/30 flex items-center justify-center border border-gloss-pink text-gloss-burgundy font-bold">
                 {nombre[0]}
               </div>
               <div>
                 <h4 className="font-zodiak font-bold text-lg leading-tight">{nombre}</h4>
-                <p className="text-xs text-gray-500">Cuenta Corriente</p>
+                <p className="text-xs text-gray-500">Cuenta Corriente Socio</p>
               </div>
             </div>
             {isNegative ? (
               <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 text-xs font-semibold flex items-center gap-1">
-                <ArrowDownCircle size={12} /> Deuda con la Agencia
+                <ArrowDownCircle size={12} /> Saldo Negativo
               </span>
             ) : (
               <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 text-xs font-semibold flex items-center gap-1">
-                <ArrowUpCircle size={12} /> Saldo a favor
+                <ArrowUpCircle size={12} /> Saldo Disponible
               </span>
             )}
           </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Saldo Actual Disp.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Saldo Actual a Favor</p>
           <h3 className={`text-3xl font-bold font-zodiak ${isNegative ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
             {formatCOP(saldo)}
           </h3>
         </div>
-        <button onClick={() => { setFormRetiro({ socio: nombre, monto: '' }); setModalRetiro(true); }} className="mt-6 w-full py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-          <Wallet size={16} /> Registrar Retiro / Anticipo
+        <button 
+          onClick={() => { setFormRetiro({ socio: nombre, monto: '' }); setModalRetiro(true); }} 
+          className="mt-6 w-full py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-xs font-bold transition-colors flex items-center justify-center gap-2"
+        >
+          <Wallet size={15} /> Registrar Retiro / Anticipo
         </button>
       </div>
     );
@@ -337,80 +544,226 @@ export default function Finanzas() {
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-zodiak font-bold text-gloss-burgundy dark:text-gloss-inverted">Dashboard Financiero</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Control maestro contable, flujos de caja y deudas</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Control maestro contable, flujos de caja, bóveda de agencia y libro mayor</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setModalGasto(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-medium transition-colors text-sm">
-            <TrendingDown size={16} /> Añadir Gasto
+          <button onClick={() => setModalGasto(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-200 font-bold transition-colors text-xs">
+            <TrendingDown size={15} /> Añadir Gasto
           </button>
-          <button onClick={() => setModalIngreso(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gloss-burgundy hover:bg-gloss-burgundy/90 text-white font-medium transition-colors shadow-sm text-sm">
-            <Plus size={16} /> Añadir Ingreso
+          <button onClick={() => setModalIngreso(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gloss-burgundy hover:bg-gloss-burgundy/90 text-white font-bold transition-colors shadow-sm text-xs">
+            <Plus size={15} /> Añadir Ingreso
           </button>
         </div>
       </div>
 
       {/* SECCIÓN 1: BÓVEDA & SOCIOS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="p-6 rounded-2xl border border-gloss-burgundy bg-gloss-burgundy text-white flex flex-col justify-between shadow-lg relative overflow-hidden">
+        
+        {/* TARJETA BÓVEDA DE AGENCIA */}
+        <div className="p-6 rounded-3xl border border-gloss-burgundy bg-gloss-burgundy text-white flex flex-col justify-between shadow-xl relative overflow-hidden">
           <div className="absolute -right-10 -top-10 opacity-10"><Landmark size={180} /></div>
+          
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-white/20 rounded-xl"><PiggyBank size={24} /></div>
-              <div>
-                <h3 className="font-zodiak font-bold text-xl">Bóveda de Agencia</h3>
-                <p className="text-sm text-white/80">Fondo Reinversión Acumulado</p>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-white/20 rounded-2xl"><PiggyBank size={24} /></div>
+                <div>
+                  <h3 className="font-zodiak font-bold text-xl">Bóveda de Agencia</h3>
+                  <p className="text-xs text-white/80">Fondo de Ahorro & Reinversión</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="text-white/80 text-sm mb-1">Total Protegido</p>
-              <h2 className="text-4xl font-bold font-zodiak">{formatCOP(fondoTotalBoveda)}</h2>
+
+              {/* Configuración Dinámica de Porcentaje */}
+              <div className="flex items-center gap-1.5 bg-black/25 px-2.5 py-1 rounded-xl border border-white/20">
+                {isEditingPct ? (
+                  <div className="flex items-center gap-1">
+                    <input 
+                      type="number" 
+                      min="0" 
+                      max="100"
+                      value={tempPct}
+                      onChange={(e) => setTempPct(e.target.value)}
+                      className="w-12 px-1 py-0.5 text-xs text-black font-bold rounded bg-white outline-none text-center"
+                    />
+                    <span className="text-xs font-bold">%</span>
+                    <button onClick={handleSavePorcentaje} className="p-1 hover:text-green-300 transition-colors" title="Guardar"><Check size={13} /></button>
+                    <button onClick={() => { setIsEditingPct(false); setTempPct(porcentajeBoveda); }} className="p-1 hover:text-red-300 transition-colors" title="Cancelar"><X size={13} /></button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-xs font-bold">
+                    <span>{porcentajeBoveda}% Ahorro</span>
+                    <button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>
+                  </div>
+                )}
               </div>
-            </div>
-            
-            <div className="mt-4 relative z-10">
-              <button 
-                onClick={() => {
-                  setFormGasto({ concepto: '', categoria: 'Operativos', monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Bóveda de Agencia' });
-                  setModalGasto(true);
-                }}
-                className="w-full bg-white/20 hover:bg-white/30 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
-              >
-                Registrar Retiro / Gasto de Reinversión
-              </button>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-white/20 relative z-10 flex justify-between items-center text-sm">
-              <span>+{formatCOP(fondoReinversionMes)} (Mes actual)</span>
-              <span className="px-2 py-1 bg-white/20 rounded text-xs font-medium">15% Intocable</span>
+            <div className="mt-4">
+              <p className="text-white/80 text-xs mb-1">Saldo Total Protegido en Bóveda</p>
+              <h2 className="text-4xl font-bold font-zodiak">{formatCOP(fondoTotalBoveda)}</h2>
             </div>
           </div>
+          
+          <div className="mt-6 relative z-10 space-y-3">
+            <button 
+              onClick={() => {
+                setTabBoveda('transferir');
+                setModalBoveda(true);
+              }}
+              className="w-full bg-white text-gloss-burgundy hover:bg-white/90 font-bold py-2.5 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-xs"
+            >
+              <Send size={15} /> Movimientos y Gastos de Bóveda
+            </button>
+
+            <div className="pt-3 border-t border-white/20 flex justify-between items-center text-xs">
+              <span>+{formatCOP(fondoReinversionMes)} (Mes actual)</span>
+              <span className="px-2 py-0.5 bg-white/20 rounded font-bold">{porcentajeBoveda}% de Ingresos Brutos</span>
+            </div>
+          </div>
+        </div>
+
+        {/* TARJETAS DE SOCIOS */}
         <SocioCard nombre="Davilson" saldo={saldoDavilson} />
         <SocioCard nombre="Santiago" saldo={saldoSantiago} />
       </div>
 
       {/* SECCIÓN 2: RENDIMIENTO MES ACTUAL */}
-      <div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-5 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black shadow-sm">
-            <p className="text-sm text-gray-500 mb-1 flex items-center gap-2"><TrendingUp size={16} className="text-green-500" /> Ingresos Brutos (Caja)</p>
-            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{formatCOP(totalIngresos)}</h3>
-          </div>
-          <div className="p-5 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black shadow-sm">
-            <p className="text-sm text-gray-500 mb-1 flex items-center gap-2"><TrendingDown size={16} className="text-red-500" /> Gastos Ejecutados (Caja)</p>
-            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{formatCOP(totalGastosEfectivo)}</h3>
-          </div>
-          <div className={`p-5 rounded-xl border ${utilidadBrutaMes >= 0 ? 'border-green-200 bg-green-50 dark:bg-green-900/10' : 'border-red-200 bg-red-50 dark:bg-red-900/10'} shadow-sm`}>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Utilidad Neta Disponible</p>
-            <h3 className={`text-2xl font-bold ${utilidadBrutaMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCOP(utilidadBrutaMes)}</h3>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black shadow-sm">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2"><TrendingUp size={15} className="text-green-500" /> Ingresos Brutos (Caja)</p>
+          <h3 className="text-2xl font-bold font-zodiak text-gray-900 dark:text-white">{formatCOP(totalIngresos)}</h3>
+        </div>
+        <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gloss-black shadow-sm">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2"><TrendingDown size={15} className="text-red-500" /> Gastos Ejecutados (Caja)</p>
+          <h3 className="text-2xl font-bold font-zodiak text-gray-900 dark:text-white">{formatCOP(totalGastosEfectivo)}</h3>
+        </div>
+        <div className={`p-5 rounded-2xl border ${utilidadBrutaMes >= 0 ? 'border-green-200 bg-green-50/60 dark:bg-green-900/10' : 'border-red-200 bg-red-50/60 dark:bg-red-900/10'} shadow-sm`}>
+          <p className="text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-1">Utilidad Neta Disponible</p>
+          <h3 className={`text-2xl font-bold font-zodiak ${utilidadBrutaMes >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{formatCOP(utilidadBrutaMes)}</h3>
         </div>
       </div>
 
-      {/* SECCIÓN 3: CONTROL DE DEUDAS (TDC & Terceros) */}
+      {/* SECCIÓN 3: LIBRO MAYOR / HISTORIAL UNIFICADO DE MOVIMIENTOS */}
+      <div className="bg-white dark:bg-gloss-black rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gloss-burgundy/10 dark:bg-gloss-pink/10 flex items-center justify-center text-gloss-burgundy dark:text-gloss-pink font-bold">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h3 className="font-zodiak font-bold text-lg text-gray-900 dark:text-white">
+                Libro Mayor • Historial de Movimientos
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Registro cronológico exacto de ingresos, gastos, retiros y traspasos de bóveda
+              </p>
+            </div>
+          </div>
+
+          {/* Filtros y Buscador */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex border border-gray-200 dark:border-gray-700 rounded-xl p-1 bg-white dark:bg-gray-800 text-xs font-bold">
+              <button 
+                onClick={() => setFiltroLibro('todos')} 
+                className={`px-3 py-1 rounded-lg transition-colors ${filtroLibro === 'todos' ? 'bg-gloss-burgundy text-white' : 'text-gray-500 hover:text-gray-800 dark:hover:text-white'}`}
+              >
+                Todos ({libroMayor.length})
+              </button>
+              <button 
+                onClick={() => setFiltroLibro('ingresos')} 
+                className={`px-3 py-1 rounded-lg transition-colors ${filtroLibro === 'ingresos' ? 'bg-green-600 text-white' : 'text-gray-500 hover:text-gray-800 dark:hover:text-white'}`}
+              >
+                Ingresos
+              </button>
+              <button 
+                onClick={() => setFiltroLibro('gastos')} 
+                className={`px-3 py-1 rounded-lg transition-colors ${filtroLibro === 'gastos' ? 'bg-red-600 text-white' : 'text-gray-500 hover:text-gray-800 dark:hover:text-white'}`}
+              >
+                Gastos
+              </button>
+              <button 
+                onClick={() => setFiltroLibro('boveda_socios')} 
+                className={`px-3 py-1 rounded-lg transition-colors ${filtroLibro === 'boveda_socios' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-800 dark:hover:text-white'}`}
+              >
+                Bóveda & Socios
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar movimiento..."
+                value={searchLibro}
+                onChange={(e) => setSearchLibro(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-xs rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 outline-none focus:ring-2 focus:ring-gloss-burgundy"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto max-h-[380px] overflow-y-auto custom-scrollbar">
+          <table className="w-full text-left text-xs min-w-[700px]">
+            <thead className="bg-gray-50/80 dark:bg-gray-900/60 text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold text-[10px] sticky top-0 z-10 border-b border-gray-100 dark:border-gray-800">
+              <tr>
+                <th className="py-3 px-4">Fecha</th>
+                <th className="py-3 px-4">Tipo</th>
+                <th className="py-3 px-4">Categoría</th>
+                <th className="py-3 px-4">Concepto</th>
+                <th className="py-3 px-4">Origen / Destino</th>
+                <th className="py-3 px-4 text-right">Monto (COP)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {filteredLibroMayor.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-gray-400">
+                    No se encontraron movimientos registrados con el filtro actual.
+                  </td>
+                </tr>
+              ) : (
+                filteredLibroMayor.map((m) => (
+                  <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors">
+                    <td className="py-3 px-4 text-gray-500 whitespace-nowrap">{m.fecha}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
+                        m.tipo === 'Ingreso' 
+                          ? 'bg-green-100 dark:bg-green-950/60 text-green-700 dark:text-green-400 border-green-200' 
+                          : m.tipo === 'Gasto General'
+                          ? 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-400 border-red-200'
+                          : m.tipo === 'Gasto Bóveda'
+                          ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400 border-orange-200'
+                          : m.tipo === 'Transf. Bóveda'
+                          ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400 border-blue-200'
+                          : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 border-purple-200'
+                      }`}>
+                        {m.tipo}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-medium text-gray-600 dark:text-gray-300">{m.categoria}</td>
+                    <td className="py-3 px-4 font-bold text-gray-900 dark:text-white">{m.concepto}</td>
+                    <td className="py-3 px-4 text-gray-500">{m.origenDestino}</td>
+                    <td className={`py-3 px-4 font-black text-right whitespace-nowrap ${
+                      m.esPositivo 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : m.esTransferencia 
+                        ? 'text-blue-600 dark:text-blue-400' 
+                        : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {m.esPositivo ? `+${formatCOP(m.monto)}` : m.esTransferencia ? `↔ ${formatCOP(m.monto)}` : `-${formatCOP(m.monto)}`}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SECCIÓN 4: CONTROL DE DEUDAS (TDC & Terceros) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
         {/* Tarjetas de Crédito */}
-        <div className="bg-white dark:bg-gloss-black rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white dark:bg-gloss-black rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
           <div className="p-5 border-b border-gray-200 dark:border-gray-800 bg-red-50/50 dark:bg-red-900/10 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <CreditCard className="text-red-500" size={20} />
@@ -423,13 +776,13 @@ export default function Finanzas() {
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-900/30 flex justify-between items-center border-b border-gray-100 dark:border-gray-800">
             <span className="text-xs text-gray-500 px-2">No afecta utilidad hasta pagarse.</span>
-            <button onClick={pagarTarjetaCompleta} disabled={comprasTDC.length === 0} className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${comprasTDC.length > 0 ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+            <button onClick={pagarTarjetaCompleta} disabled={comprasTDC.length === 0} className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-colors ${comprasTDC.length > 0 ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
               Pagar Tarjeta
             </button>
           </div>
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-sm min-w-[500px]">
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody className="divide-y divide-gray-100 dark:border-gray-800">
                 {comprasTDC.length === 0 && <tr><td className="p-6 text-center text-gray-500">No hay deudas en TDC</td></tr>}
                 {comprasTDC.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
@@ -444,19 +797,19 @@ export default function Finanzas() {
         </div>
 
         {/* Cuentas por Pagar (Terceros) */}
-        <div className="bg-white dark:bg-gloss-black rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white dark:bg-gloss-black rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
           <div className="p-5 border-b border-gray-200 dark:border-gray-800 bg-orange-50/50 dark:bg-orange-900/10 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <Clock className="text-orange-500" size={20} />
               <h3 className="font-zodiak font-bold text-lg text-orange-600 dark:text-orange-400">Cuentas por Pagar</h3>
             </div>
-            <button onClick={() => setModalDeuda(true)} className="text-sm px-3 py-1.5 rounded-lg font-medium bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/50 dark:text-orange-300 transition-colors flex items-center gap-1">
+            <button onClick={() => setModalDeuda(true)} className="text-xs px-3 py-1.5 rounded-xl font-bold bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/50 dark:text-orange-300 transition-colors flex items-center gap-1">
               <Plus size={14} /> Registrar
             </button>
           </div>
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
             <table className="w-full text-left text-sm min-w-[500px]">
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              <tbody className="divide-y divide-gray-100 dark:border-gray-800">
                 {deudasPendientes.length === 0 && <tr><td className="p-6 text-center text-gray-500">Sin deudas a terceros</td></tr>}
                 {deudasPendientes.map(d => (
                   <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
@@ -479,143 +832,310 @@ export default function Finanzas() {
         </div>
       </div>
 
-      {/* SECCIÓN 4: TABLAS PRINCIPALES */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* INGRESOS */}
-        <div className="bg-white dark:bg-gloss-black rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex items-center gap-2">
-            <TrendingUp className="text-green-500" size={18} /> <h3 className="font-zodiak font-bold text-lg">Historial de Ingresos</h3>
+      {/* SECCIÓN 5: GASTOS FIJOS (AUTOMÁTICOS) */}
+      <div className="bg-white dark:bg-gloss-black rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex justify-between items-center">
+          <div>
+            <h3 className="font-zodiak font-bold text-lg flex items-center gap-2"><RefreshCw className="text-blue-500" size={18} /> Gastos Fijos (Automáticos)</h3>
+            <p className="text-xs text-gray-400">Gastos mensuales recurrentes sincronizados con la base de datos</p>
           </div>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-left text-sm min-w-[500px]">
-              <thead className="bg-gray-50 dark:bg-gray-900/80 text-gray-500 sticky top-0">
-                <tr>
-                  <th className="p-3 font-medium">Detalle</th>
-                  <th className="p-3 font-medium">Fecha</th>
-                  <th className="p-3 font-medium text-right">Monto</th>
-                  <th className="p-3 text-center"></th>
+          <button onClick={() => setModalFijo(true)} className="text-xs font-bold text-blue-600 hover:text-blue-500 flex items-center gap-1 bg-blue-50 dark:bg-blue-950/40 px-3 py-1.5 rounded-xl"><Plus size={14}/> Añadir Fijo</button>
+        </div>
+        <div className="overflow-x-auto max-h-60 overflow-y-auto">
+          <table className="w-full text-left text-sm min-w-[500px]">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {gastosFijos.length === 0 && <tr><td className="p-6 text-center text-gray-400">No hay gastos fijos configurados</td></tr>}
+              {gastosFijos.map(f => {
+                const days = getDaysUntil(f.diaCobro);
+                const alert = days <= 5;
+                return (
+                  <tr key={f.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                    <td className="p-3">
+                      <p className="font-medium">{f.concepto}</p>
+                      <span className="text-xs text-gray-500">{f.categoria}</span>
+                    </td>
+                    <td className="p-3">
+                      {alert ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle size={12}/> En {days} {days===1?'día':'días'}</span>
+                      ) : (
+                        <span className="text-xs text-gray-500">Día {f.diaCobro} de cada mes</span>
+                      )}
+                    </td>
+                    <td className="p-3 font-bold text-gray-900 dark:text-white text-right">-{formatCOP(f.monto)}</td>
+                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* PANEL DE AUDITORÍA */}
+      <div className="bg-white dark:bg-gloss-black rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+        <button 
+          onClick={() => setShowAudit(!showAudit)}
+          className="w-full flex items-center justify-between p-5 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Activity size={20} className="text-gloss-burgundy dark:text-gloss-pink" />
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">Registro de Auditoría (Trazabilidad de Movimientos)</h3>
+          </div>
+          <span className="text-xs font-bold text-gray-500">{showAudit ? 'Ocultar' : 'Ver'}</span>
+        </button>
+        
+        {showAudit && (
+          <div className="p-5 border-t border-gray-100 dark:border-gray-800 overflow-x-auto">
+            <table className="w-full text-left text-xs min-w-[600px]">
+              <thead>
+                <tr className="text-gray-400 dark:text-gray-500 uppercase text-[10px] tracking-wider border-b border-gray-100 dark:border-gray-800">
+                  <th className="pb-3 font-medium">Fecha</th>
+                  <th className="pb-3 font-medium">Usuario</th>
+                  <th className="pb-3 font-medium">Módulo</th>
+                  <th className="pb-3 font-medium">Acción</th>
+                  <th className="pb-3 font-medium">Detalle</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {ingresos.map(i => (
-                  <tr key={i.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                    <td className="p-3">
-                      <p className="font-medium">{i.concepto}</p>
-                      <p className="text-xs text-gray-500">{i.cliente} • {i.tipo}</p>
-                    </td>
-                    <td className="p-3 text-gray-500">{i.fecha}</td>
-                    <td className="p-3 font-medium text-green-600 text-right">{formatCOP(i.monto)}</td>
-                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_ingresos', setIngresos, ingresos, i.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
-                  </tr>
-                ))}
+                {auditLogs.length === 0 ? (
+                  <tr><td colSpan="5" className="py-4 text-center text-gray-500">No hay registros recientes.</td></tr>
+                ) : (
+                  auditLogs.map(log => (
+                    <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/30">
+                      <td className="py-3 pr-4 text-gray-500 whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</td>
+                      <td className="py-3 pr-4 font-medium text-gray-900 dark:text-white">{log.usuario_nombre}</td>
+                      <td className="py-3 pr-4"><span className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-xs">{log.modulo}</span></td>
+                      <td className="py-3 pr-4">
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${log.accion === 'CREAR' ? 'bg-green-100 text-green-700' : log.accion === 'ELIMINAR' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {log.accion}
+                        </span>
+                      </td>
+                      <td className="py-3 text-gray-600 dark:text-gray-400">{log.detalle}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* GASTOS Y RECURRENTES (Agrupados Visualmente) */}
-        <div className="space-y-6">
-          {/* Fijos / Recurrentes */}
-          <div className="bg-white dark:bg-gloss-black rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex justify-between items-center">
-              <h3 className="font-zodiak font-bold text-lg flex items-center gap-2"><RefreshCw className="text-blue-500" size={18} /> Gastos Fijos (Automáticos)</h3>
-              <button onClick={() => setModalFijo(true)} className="text-xs font-medium text-blue-600 hover:text-blue-500 flex items-center gap-1"><Plus size={14}/> Añadir</button>
-            </div>
-            <div className="overflow-x-auto max-h-60 overflow-y-auto">
-              <table className="w-full text-left text-sm min-w-[500px]">
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {gastosFijos.map(f => {
-                    const days = getDaysUntil(f.diaCobro);
-                    const alert = days <= 5;
-                    return (
-                      <tr key={f.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                        <td className="p-3">
-                          <p className="font-medium">{f.concepto}</p>
-                          <span className="text-xs text-gray-500">{f.categoria}</span>
-                        </td>
-                        <td className="p-3">
-                          {alert ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"><AlertTriangle size={12}/> En {days} {days===1?'día':'días'}</span>
-                          ) : (
-                            <span className="text-xs text-gray-500">Día {f.diaCobro}</span>
-                          )}
-                        </td>
-                        <td className="p-3 font-medium text-gray-900 dark:text-white text-right">-{formatCOP(f.monto)}</td>
-                        <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          
-          {/* Gastos Variables Efectivo */}
-          <div className="bg-white dark:bg-gloss-black rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 flex items-center gap-2">
-              <TrendingDown className="text-gray-500" size={18} /> <h3 className="font-zodiak font-bold text-lg">Gastos Variables (Pagados)</h3>
-            </div>
-            <div className="overflow-x-auto max-h-60 overflow-y-auto">
-              <table className="w-full text-left text-sm min-w-[500px]">
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {gastos.length===0 && <tr><td className="p-4 text-center text-gray-500">Sin gastos registrados</td></tr>}
-                  {gastos.map(g => (
-                    <tr key={g.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
-                      <td className="p-3"><p className="font-medium">{g.concepto}</p><span className="text-xs text-gray-500">{g.categoria}</span></td>
-                      <td className="p-3 text-gray-500">{g.fecha}</td>
-                      <td className="p-3 font-medium text-gray-900 dark:text-white text-right">-{formatCOP(g.monto)}</td>
-                      <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos', setGastos, gastos, g.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
+        )}
       </div>
 
       {/* ================= MODALES ================= */}
       
+      {/* MODAL GESTIÓN DE BÓVEDA (Transferir a Socio / Gasto Bóveda) */}
+      {modalBoveda && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-800 relative">
+            <button onClick={() => setModalBoveda(false)} className="absolute top-4 right-4 p-1.5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white">
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-5 border-b border-gray-100 dark:border-gray-800 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-gloss-burgundy/10 dark:bg-gloss-pink/10 flex items-center justify-center text-gloss-burgundy dark:text-gloss-pink">
+                <PiggyBank size={20} />
+              </div>
+              <div>
+                <h3 className="font-zodiak font-bold text-lg text-gray-900 dark:text-white">
+                  Movimientos de la Bóveda
+                </h3>
+                <p className="text-xs text-gray-500">Saldo Disponible: <strong className="text-gloss-burgundy dark:text-gloss-pink">{formatCOP(fondoTotalBoveda)}</strong></p>
+              </div>
+            </div>
+
+            {/* Selector de Pestañas */}
+            <div className="flex border-b border-gray-100 dark:border-gray-800 mb-5 gap-2">
+              <button
+                type="button"
+                onClick={() => setTabBoveda('transferir')}
+                className={`pb-2 px-3 text-xs font-bold border-b-2 transition-colors ${
+                  tabBoveda === 'transferir' 
+                    ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink' 
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                A) Transferir a Socio
+              </button>
+              <button
+                type="button"
+                onClick={() => setTabBoveda('gasto')}
+                className={`pb-2 px-3 text-xs font-bold border-b-2 transition-colors ${
+                  tabBoveda === 'gasto' 
+                    ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink' 
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                B) Registrar Gasto de Bóveda
+              </button>
+            </div>
+
+            {/* TAB A: Transferir a Socio */}
+            {tabBoveda === 'transferir' && (
+              <form onSubmit={handleTransferenciaBoveda} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Socio Receptor</label>
+                  <select 
+                    value={formTransfBoveda.socio} 
+                    onChange={e => setFormTransfBoveda({ ...formTransfBoveda, socio: e.target.value })} 
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold cursor-pointer"
+                  >
+                    <option value="Davilson">Davilson (Cuenta Corriente)</option>
+                    <option value="Santiago">Santiago (Cuenta Corriente)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Monto a Transferir (COP)</label>
+                  <input 
+                    required 
+                    type="number" 
+                    min="1" 
+                    max={fondoTotalBoveda > 0 ? fondoTotalBoveda : undefined}
+                    value={formTransfBoveda.monto} 
+                    onChange={e => setFormTransfBoveda({ ...formTransfBoveda, monto: e.target.value })} 
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" 
+                    placeholder="0"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Este monto se descontará de la Bóveda y sumará al saldo disponible del socio.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Motivo / Concepto</label>
+                  <input 
+                    type="text" 
+                    value={formTransfBoveda.motivo} 
+                    onChange={e => setFormTransfBoveda({ ...formTransfBoveda, motivo: e.target.value })} 
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                    placeholder="Ej. Distribución extraordinaria de ahorro"
+                  />
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button type="button" onClick={() => setModalBoveda(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-xs font-bold">Cancelar</button>
+                  <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white text-xs font-bold hover:bg-gloss-burgundy/90 shadow-md">Confirmar Transferencia</button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB B: Gasto de Bóveda */}
+            {tabBoveda === 'gasto' && (
+              <form onSubmit={handleGastoBoveda} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Concepto del Gasto</label>
+                  <input 
+                    required 
+                    value={formGastoBoveda.concepto} 
+                    onChange={e => setFormGastoBoveda({ ...formGastoBoveda, concepto: e.target.value })} 
+                    className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                    placeholder="Ej: Inversión en servidor de alta capacidad"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Categoría</label>
+                    <select 
+                      value={formGastoBoveda.categoria} 
+                      onChange={e => setFormGastoBoveda({ ...formGastoBoveda, categoria: e.target.value })} 
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                    >
+                      {CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Fecha</label>
+                    <input 
+                      required 
+                      type="date" 
+                      value={formGastoBoveda.fecha} 
+                      onChange={e => setFormGastoBoveda({ ...formGastoBoveda, fecha: e.target.value })} 
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Método de Pago</label>
+                    <select 
+                      value={formGastoBoveda.metodo} 
+                      onChange={e => setFormGastoBoveda({ ...formGastoBoveda, metodo: e.target.value })} 
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                    >
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Efectivo">Efectivo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">Monto (COP)</label>
+                    <input 
+                      required 
+                      type="number" 
+                      min="1" 
+                      value={formGastoBoveda.monto} 
+                      onChange={e => setFormGastoBoveda({ ...formGastoBoveda, monto: e.target.value })} 
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold" 
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button type="button" onClick={() => setModalBoveda(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-xs font-bold">Cancelar</button>
+                  <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white text-xs font-bold hover:bg-gloss-burgundy/90 shadow-md">Registrar Gasto</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Modal Ingreso */}
       {modalIngreso && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
             <h3 className="text-xl font-zodiak font-bold mb-4">Añadir Ingreso</h3>
             <form onSubmit={handleIngreso} className="space-y-4">
-              <div><label className="block text-sm mb-1">Concepto</label><input required value={formIngreso.concepto} onChange={e=>setFormIngreso({...formIngreso, concepto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Ej: Abono diseño web"/></div>
-              <div><label className="block text-sm mb-1">Cliente Asociado</label><input required value={formIngreso.cliente} onChange={e=>setFormIngreso({...formIngreso, cliente: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Ej: TechCorp S.A."/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Concepto</label><input required value={formIngreso.concepto} onChange={e=>setFormIngreso({...formIngreso, concepto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Abono diseño web"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Cliente Asociado</label><input required value={formIngreso.cliente} onChange={e=>setFormIngreso({...formIngreso, cliente: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: TechCorp S.A."/></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-sm mb-1">Tipo</label><select value={formIngreso.tipo} onChange={e=>setFormIngreso({...formIngreso, tipo: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900"><option>Retainer</option><option>Pagos Únicos</option><option>Abono</option></select></div>
-                <div><label className="block text-sm mb-1">Fecha</label><input required type="date" value={formIngreso.fecha} onChange={e=>setFormIngreso({...formIngreso, fecha: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
+                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Tipo</label><select value={formIngreso.tipo} onChange={e=>setFormIngreso({...formIngreso, tipo: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"><option>Retainer</option><option>Pagos Únicos</option><option>Abono</option></select></div>
+                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha</label><input required type="date" value={formIngreso.fecha} onChange={e=>setFormIngreso({...formIngreso, fecha: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
               </div>
-              <div><label className="block text-sm mb-1">Monto (COP)</label><input required type="number" min="0" value={formIngreso.monto} onChange={e=>setFormIngreso({...formIngreso, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label><input required type="number" min="0" value={formIngreso.monto} onChange={e=>setFormIngreso({...formIngreso, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalIngreso(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 rounded-lg bg-gloss-burgundy text-white font-medium">Guardar</button>
+                <button type="button" onClick={()=>setModalIngreso(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Guardar Ingreso</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Modal Gasto (Variable / TDC) */}
+      {/* Modal Gasto (Estricto con CATEGORIAS_GASTOS) */}
       {modalGasto && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
             <h3 className="text-xl font-zodiak font-bold mb-4">Añadir Gasto</h3>
             <form onSubmit={handleGasto} className="space-y-4">
-              <div><label className="block text-sm mb-1">Concepto</label><input required value={formGasto.concepto} onChange={e=>setFormGasto({...formGasto, concepto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="Ej: Pauta Meta Ads"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Concepto</label><input required value={formGasto.concepto} onChange={e=>setFormGasto({...formGasto, concepto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Pauta Meta Ads"/></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-sm mb-1">Categoría</label><select value={formGasto.categoria} onChange={e=>setFormGasto({...formGasto, categoria: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900"><option>Variables</option><option>Operativos</option><option>Equipos</option></select></div>
-                <div><label className="block text-sm mb-1">Fecha</label><input required type="date" value={formGasto.fecha} onChange={e=>setFormGasto({...formGasto, fecha: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Categoría</label>
+                  <select 
+                    value={formGasto.categoria} 
+                    onChange={e=>setFormGasto({...formGasto, categoria: e.target.value})} 
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                  >
+                    {CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha</label><input required type="date" value={formGasto.fecha} onChange={e=>setFormGasto({...formGasto, fecha: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
               </div>
-              <div><label className="block text-sm mb-1">Origen del Dinero</label><select value={formGasto.metodo} onChange={e=>setFormGasto({...formGasto, metodo: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900 font-medium text-gloss-burgundy"><option>Caja General</option><option>Bóveda de Agencia</option><option>Cuenta Davilson</option><option>Cuenta Santiago</option><option>Tarjeta de Crédito (TDC)</option></select></div>
-              <div><label className="block text-sm mb-1">Monto (COP)</label><input required type="number" min="0" value={formGasto.monto} onChange={e=>setFormGasto({...formGasto, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Origen del Dinero</label><select value={formGasto.metodo} onChange={e=>setFormGasto({...formGasto, metodo: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-gloss-burgundy dark:text-gloss-pink cursor-pointer"><option>Caja General</option><option>Bóveda de Agencia</option><option>Cuenta Davilson</option><option>Cuenta Santiago</option><option>Tarjeta de Crédito (TDC)</option></select></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label><input required type="number" min="0" value={formGasto.monto} onChange={e=>setFormGasto({...formGasto, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalGasto(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 rounded-lg bg-gloss-burgundy text-white font-medium">Guardar</button>
+                <button type="button" onClick={()=>setModalGasto(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Guardar Gasto</button>
               </div>
             </form>
           </div>
@@ -625,19 +1145,28 @@ export default function Finanzas() {
       {/* Modal Fijo */}
       {modalFijo && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
             <h3 className="text-xl font-zodiak font-bold mb-4">Añadir Gasto Recurrente</h3>
             <form onSubmit={handleFijo} className="space-y-4">
-              <div><label className="block text-sm mb-1">SaaS / Concepto</label><input required value={formFijo.concepto} onChange={e=>setFormFijo({...formFijo, concepto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">SaaS / Concepto</label><input required value={formFijo.concepto} onChange={e=>setFormFijo({...formFijo, concepto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Hostinger VPS"/></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-sm mb-1">Día de Cobro (1-31)</label><input required type="number" min="1" max="31" value={formFijo.diaCobro} onChange={e=>setFormFijo({...formFijo, diaCobro: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
-                <div><label className="block text-sm mb-1">Fecha Inicio</label><input required type="date" value={formFijo.fechaInicio} onChange={e=>setFormFijo({...formFijo, fechaInicio: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
+                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Día de Cobro (1-31)</label><input required type="number" min="1" max="31" value={formFijo.diaCobro} onChange={e=>setFormFijo({...formFijo, diaCobro: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
+                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha Inicio</label><input required type="date" value={formFijo.fechaInicio} onChange={e=>setFormFijo({...formFijo, fechaInicio: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
               </div>
-              <div><label className="block text-sm mb-1">Categoría</label><select value={formFijo.categoria} onChange={e=>setFormFijo({...formFijo, categoria: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900"><option>SaaS</option><option>Nómina</option><option>Servicios</option></select></div>
-              <div><label className="block text-sm mb-1">Monto (COP)</label><input required type="number" min="0" value={formFijo.monto} onChange={e=>setFormFijo({...formFijo, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/></div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Categoría</label>
+                <select 
+                  value={formFijo.categoria} 
+                  onChange={e=>setFormFijo({...formFijo, categoria: e.target.value})} 
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                >
+                  {CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label><input required type="number" min="0" value={formFijo.monto} onChange={e=>setFormFijo({...formFijo, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalFijo(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 rounded-lg bg-gloss-burgundy text-white font-medium">Guardar</button>
+                <button type="button" onClick={()=>setModalFijo(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Guardar Fijo</button>
               </div>
             </form>
           </div>
@@ -647,15 +1176,15 @@ export default function Finanzas() {
       {/* Modal Deuda Terceros */}
       {modalDeuda && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
             <h3 className="text-xl font-zodiak font-bold mb-4 text-orange-600">Registrar Deuda a Tercero</h3>
             <form onSubmit={handleDeuda} className="space-y-4">
-              <div><label className="block text-sm mb-1">Concepto / Acreedor</label><input required value={formDeuda.concepto} onChange={e=>setFormDeuda({...formDeuda, concepto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
-              <div><label className="block text-sm mb-1">Fecha Límite Pago</label><input required type="date" value={formDeuda.fechaLimite} onChange={e=>setFormDeuda({...formDeuda, fechaLimite: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
-              <div><label className="block text-sm mb-1">Monto Adeudado (COP)</label><input required type="number" min="0" value={formDeuda.monto} onChange={e=>setFormDeuda({...formDeuda, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Concepto / Acreedor</label><input required value={formDeuda.concepto} onChange={e=>setFormDeuda({...formDeuda, concepto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha Límite Pago</label><input required type="date" value={formDeuda.fechaLimite} onChange={e=>setFormDeuda({...formDeuda, fechaLimite: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto Adeudado (COP)</label><input required type="number" min="0" value={formDeuda.monto} onChange={e=>setFormDeuda({...formDeuda, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalDeuda(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 rounded-lg bg-orange-600 text-white font-medium">Guardar Deuda</button>
+                <button type="button" onClick={()=>setModalDeuda(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-bold text-xs">Guardar Deuda</button>
               </div>
             </form>
           </div>
@@ -665,14 +1194,14 @@ export default function Finanzas() {
       {/* Modal Retiro */}
       {modalRetiro && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
             <h3 className="text-xl font-zodiak font-bold mb-1">Retiro de Capital</h3>
-            <p className="text-sm text-gray-500 mb-4">Socio: <strong className="text-gray-900 dark:text-white">{formRetiro.socio}</strong></p>
+            <p className="text-xs text-gray-500 mb-4">Socio: <strong className="text-gray-900 dark:text-white">{formRetiro.socio}</strong></p>
             <form onSubmit={handleRetiro} className="space-y-4">
-              <div><label className="block text-sm mb-1">Monto a retirar (COP)</label><input required type="number" min="1" value={formRetiro.monto} onChange={e=>setFormRetiro({...formRetiro, monto: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent text-lg"/></div>
+              <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto a retirar (COP)</label><input required type="number" min="1" value={formRetiro.monto} onChange={e=>setFormRetiro({...formRetiro, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg" placeholder="0"/></div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalRetiro(false)} className="flex-1 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 font-medium">Cancelar</button>
-                <button type="submit" className="flex-1 py-2 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium">Confirmar Retiro</button>
+                <button type="button" onClick={()=>setModalRetiro(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Confirmar Retiro</button>
               </div>
             </form>
           </div>
