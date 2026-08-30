@@ -101,6 +101,17 @@ export default function Finanzas() {
           setIngresos(fetchedIngresos);
           setGastos(fetchedGastos);
 
+          const fetchedGastosFijos = gf.data ? gf.data.map(item => ({
+            id: item.id,
+            concepto: item.concepto,
+            categoria: item.categoria,
+            monto: Number(item.monto),
+            fechaInicio: item.fecha_inicio,
+            diaCobro: item.dia_cobro
+          })) : [];
+          setGastosFijos(fetchedGastosFijos);
+
+
 
       } catch (err) {
         console.error('Error fetching finanzas', err);
