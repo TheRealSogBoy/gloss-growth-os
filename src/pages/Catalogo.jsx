@@ -12,7 +12,7 @@ import { supabase } from '../supabaseClient';
 // ─────────────────────────────────────────────────────────────────────────────
 export const INITIAL_CATALOGO = [
   {
-     nombre: 'Pauta Digital (Meta Ads)', categoria: 'Publicidad',
+     id: 'svc_1', nombre: 'Pauta Digital (Meta Ads)', categoria: 'Publicidad',
     tipoPrecio: 'base', precio: 600000, precioMax: null, icono: 'Megaphone',
     color: 'bg-orange-100 text-orange-600',
     descripcion: 'Diseño, montaje y optimización de campañas publicitarias en Meta.',
@@ -25,7 +25,7 @@ export const INITIAL_CATALOGO = [
     ],
   },
   {
-     nombre: 'Gestión de Redes Sociales', categoria: 'Contenido',
+     id: 'svc_2', nombre: 'Gestión de Redes Sociales', categoria: 'Contenido',
     tipoPrecio: 'rango', precio: 800000, precioMax: 1500000, icono: 'Share2',
     color: 'bg-pink-100 text-pink-600',
     descripcion: 'Administración de perfiles, grilla de contenidos y Reels según el plan.',
@@ -38,7 +38,7 @@ export const INITIAL_CATALOGO = [
     ],
   },
   {
-     nombre: 'Página Web Corporativa', categoria: 'Desarrollo Web',
+     id: 'svc_3', nombre: 'Página Web Corporativa', categoria: 'Desarrollo Web',
     tipoPrecio: 'base', precio: 730000, precioMax: null, icono: 'Monitor',
     color: 'bg-blue-100 text-blue-600',
     descripcion: 'Sitio web profesional y escalable para marcas médicas o estéticas.',
@@ -51,7 +51,7 @@ export const INITIAL_CATALOGO = [
     ],
   },
   {
-     nombre: 'Landing Page Comercial', categoria: 'Desarrollo Web',
+     id: 'svc_4', nombre: 'Landing Page Comercial', categoria: 'Desarrollo Web',
     tipoPrecio: 'fijo', precio: 490000, precioMax: null, icono: 'LayoutTemplate',
     color: 'bg-cyan-100 text-cyan-600',
     descripcion: 'Página de aterrizaje de alta conversión para captura de leads.',
@@ -64,7 +64,7 @@ export const INITIAL_CATALOGO = [
     ],
   },
   {
-     nombre: 'SEO Local Omnicanal', categoria: 'Posicionamiento',
+     id: 'svc_5', nombre: 'SEO Local Omnicanal', categoria: 'Posicionamiento',
     tipoPrecio: 'custom', precio: 350000, precioMax: null, icono: 'Map',
     color: 'bg-green-100 text-green-600',
     descripcion: 'Dominio de búsquedas geolocalizadas para atraer pacientes locales.',
@@ -77,7 +77,7 @@ export const INITIAL_CATALOGO = [
     ],
   },
   {
-     nombre: 'Consultoría Estratégica', categoria: 'Asesoría',
+     id: 'svc_6', nombre: 'Consultoría Estratégica', categoria: 'Asesoría',
     tipoPrecio: 'custom', precio: 250000, precioMax: null, icono: 'Briefcase',
     color: 'bg-purple-100 text-purple-600',
     descripcion: 'Asesoría de alto nivel, reestructuración de ofertas y planes de crecimiento.',
@@ -93,9 +93,9 @@ export const INITIAL_CATALOGO = [
 const CATEGORIAS = ['Todas', 'Publicidad', 'Contenido', 'Desarrollo Web', 'Posicionamiento', 'Asesoría'];
 
 const CLIENTES_MOCK = [
-  {  nombre: 'SkinGlow Spa', contacto: 'Laura Martínez', ciudad: 'Bogotá', documento: 'NIT 901.234.567-8' },
-  {  nombre: 'Dr. Aesthetic Clinic', contacto: 'Carlos Ruiz', ciudad: 'CDMX', documento: 'RFC AES980214XYZ' },
-  {  nombre: 'Dra. Elena Derma', contacto: 'Elena Gómez', ciudad: 'Medellín', documento: 'CC 1.020.333.444' },
+  {  id: 'svc_7', nombre: 'SkinGlow Spa', contacto: 'Laura Martínez', ciudad: 'Bogotá', documento: 'NIT 901.234.567-8' },
+  {  id: 'svc_8', nombre: 'Dr. Aesthetic Clinic', contacto: 'Carlos Ruiz', ciudad: 'CDMX', documento: 'RFC AES980214XYZ' },
+  {  id: 'svc_9', nombre: 'Dra. Elena Derma', contacto: 'Elena Gómez', ciudad: 'Medellín', documento: 'CC 1.020.333.444' },
 ];
 
 const ICON_MAP = {
@@ -399,7 +399,7 @@ export default function Catalogo() {
 
   const [form, setForm] = useState({
     clienteId: 'nuevo',
-    nombre: '', contacto: '', ciudad: '', documento: '',
+    id: 'svc_10', nombre: '', contacto: '', ciudad: '', documento: '',
     terminos:
       'El presente documento tiene una validez de 15 días calendario.\n' +
       'Condiciones de pago: 50% anticipo al inicio del proyecto y 50% contra entrega.\n' +
@@ -434,7 +434,7 @@ export default function Catalogo() {
 
   // Nuevo / Editar Servicio
   const openNew = () => {
-    setSvcForm({ id: null, nombre: '', categoria: 'Desarrollo Web', tipoPrecio: 'fijo', precio: 0, precioMax: 0, icono: 'LayoutTemplate', color: 'bg-gray-100 text-gray-600', descripcion: '', entregablesText: '' });
+    setSvcForm({ id: null, id: 'svc_11', nombre: '', categoria: 'Desarrollo Web', tipoPrecio: 'fijo', precio: 0, precioMax: 0, icono: 'LayoutTemplate', color: 'bg-gray-100 text-gray-600', descripcion: '', entregablesText: '' });
     setSvcOpen(true);
   };
   const openEdit = (s) => { setSvcForm({ ...s, entregablesText: s.entregables.join('\n') }); setSvcOpen(true); };
