@@ -49,26 +49,37 @@ const getRemarketingStatus = (dateString) => {
 };
 
 
-const mapToKanbanForm = (row) => ({
-  id: row.id,
-  negocio: {
-    nombre: row.negocio_nombre,
-    categoria: row.negocio_categoria,
-    ciudad: row.negocio_ciudad
-  },
-  contactos: row.contactos || [],
-  contrato: {
-    valor: row.contrato_valor,
-    divisa: row.contrato_divisa,
-    estadoContrato: COLUMNAS.includes(row.etapa_comercial) ? row.etapa_comercial : 'Prospecto',
-    modeloComercial: row.contrato_esquema
-  },
-  etapa_comercial: row.etapa_comercial,
-  notas: row.notas_kanban || {}
-});
+const mapToKanbanForm = (row) => {
+    let columna = 'Prospecto';
+    if (COLUMNAS.includes(row.estado_contrato)) {
+      columna = row.estado_contrato;
+    } else if (['Activo', 'Onboarding', 'Setup', 'Ejecución'].includes(row.estado_contrato)) {
+      columna = 'Activo';
+    } else if (row.estado_contrato === 'Pausado') {
+      columna = 'Inactivo';
+    }
+
+    return {
+      id: row.id,
+      negocio: {
+        nombre: row.negocio_nombre,
+        categoria: row.negocio_categoria,
+        ciudad: row.negocio_ciudad
+      },
+      contactos: row.contactos || [],
+      contrato: {
+        valor: row.contrato_valor,
+        divisa: row.contrato_divisa,
+        estadoContrato: columna,
+        modeloComercial: row.contrato_esquema
+      },
+      estado_contrato: row.estado_contrato,
+      notas: row.notas_kanban || {}
+    };
+  };
 
 const mapToRow = (form) => ({
-  etapa_comercial: form.contrato?.estadoContrato, // El Kanban actualiza la etapa
+  estado_contrato: form.contrato?.estadoContrato,
   notas_kanban: form.notas || {}
 });
 
@@ -138,8 +149,7 @@ export default function KanbanClientes() {
           enlaces: enlacesGenerados,
           contrato_notas: `Interés: ${(leadForm.interes || []).join(', ')}. Próxima acción: ${leadForm.fecha_accion}`,
           contrato_valor: Number(leadForm.valor) || 0,
-          etapa_comercial: leadForm.columna,
-          estado_contrato: 'Prospecto'
+          estado_contrato: leadForm.columna
         };
         const { data, error } = await supabase.from('clientes').insert([payload]).select();
         if (error) {
@@ -175,8 +185,7 @@ export default function KanbanClientes() {
       ));
 
       // Sincronizar con Supabase
-      const payload = { etapa_comercial: nuevaColumna };
-      if (nuevaColumna === 'Activo') payload.estado_contrato = 'Activo';
+      const payload = { estado_contrato: nuevaColumna };
       await supabase.from('clientes').update(payload).eq('id', id);
     };
 
@@ -185,8 +194,7 @@ export default function KanbanClientes() {
         c.id === id ? { ...c, contrato: { ...(c.contrato || {}), estadoContrato: newStatus } } : c
       ));
 
-      const payload = { etapa_comercial: newStatus };
-      if (newStatus === 'Activo') payload.estado_contrato = 'Activo';
+      const payload = { estado_contrato: newStatus };
       await supabase.from('clientes').update(payload).eq('id', id);
     };
 
