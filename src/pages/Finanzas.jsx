@@ -60,25 +60,37 @@ export default function Finanzas() {
 
           // --- SINCRONIZACIÓN AUTOMÁTICA DE CLIENTES ---
           if (cl.data) {
-            cl.data.forEach(cliente => {
-              const planPagos = cliente.contrato?.planPagos || [];
+            cl.data.forEach(row => {
+              // En Finanzas, cl.data es el arreglo crudo de la BD (sin mapToForm)
+              const planPagos = row.plan_pagos || [];
               const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
               const isPagado100 = planPagos.length > 0 && cuotasPendientes.length === 0;
 
-              if (isPagado100 && cliente.contrato?.valor) {
+              // Alternativa legacy por si el usuario lo ve como "Al día"
+              const hoy = new Date();
+              const mesActual = hoy.getMonth();
+              const añoActual = hoy.getFullYear();
+              const historialPagos = row.historial_pagos || [];
+              const haPagadoEsteMes = historialPagos.some(p => {
+                if(!p.fecha) return false;
+                const [year, month] = p.fecha.split('-');
+                return Number(month) - 1 === mesActual && Number(year) === añoActual;
+              });
+
+              // Si está 100% pagado (por cuotas) o si es pago de mes legacy, sumarlo virtualmente
+              if ((isPagado100 || haPagadoEsteMes) && row.contrato_valor) {
                 // Verificar si ya existe en fetchedIngresos
-                // (buscando por cliente_id o por coincidencia de descripción)
-                const hasTx = fetchedIngresos.some(i => i.cliente_id === cliente.id || (i.concepto && i.concepto.includes(cliente.negocio?.nombre)));
+                const hasTx = fetchedIngresos.some(i => i.cliente_id === row.id || (i.concepto && i.concepto.includes(row.negocio_nombre)));
                 
                 if (!hasTx) {
                   // Agregar transacción virtual al estado para que sume
                   fetchedIngresos.push({
-                    id: 'virtual_' + cliente.id,
-                    cliente_id: cliente.id,
-                    concepto: `Cobro mensual - ${cliente.negocio?.nombre}`,
+                    id: 'virtual_' + row.id,
+                    cliente_id: row.id,
+                    concepto: `Cobro mensual - ${row.negocio_nombre || 'Cliente'}`,
                     cliente: 'Directorio (Virtual)',
                     tipo: 'Operativo',
-                    monto: Number(cliente.contrato.valor) || 0,
+                    monto: Number(row.contrato_valor) || 0,
                     fecha: new Date().toISOString().split('T')[0]
                   });
                 }
