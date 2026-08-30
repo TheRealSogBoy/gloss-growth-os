@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
+import { triggerN8nWebhook } from '../utils/n8n';
 import { INITIAL_CATALOGO } from './Catalogo';
 import { 
   Building2, User, DollarSign, GripVertical, MapPin, 
@@ -285,6 +286,18 @@ export default function KanbanClientes() {
           await supabase.from('clientes').update(payload).eq('id', selectedCliente.id);
         }
         logAuditoria(user, 'Pipeline Comercial', 'EDITAR', `Notas guardadas para ${selectedCliente.negocio?.nombre}`);
+        
+        // TRIGGER n8n WEBHOOK (CITA)
+        if (selectedCliente.notas?.tipoCita && selectedCliente.notas?.tipoCita !== 'Ninguna' && selectedCliente.notas?.fechaCita) {
+          triggerN8nWebhook({
+            tipo_evento: 'cita',
+            titulo: `Cita: ${selectedCliente.negocio?.nombre || 'Cliente'}`,
+            descripcion: selectedCliente.notas.texto || '',
+            fecha_inicio: new Date(selectedCliente.notas.fechaCita).toISOString(),
+            fecha_fin: new Date(new Date(selectedCliente.notas.fechaCita).getTime() + 60*60*1000).toISOString(),
+            email_cliente: selectedCliente.negocio_correos || ''
+          });
+        }
       } catch (err) {
         console.error('Error guardando modal de cliente:', err);
       }
