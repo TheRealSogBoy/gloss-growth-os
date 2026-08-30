@@ -578,7 +578,7 @@ export default function Directorio() {
                             {documentosOpciones.map(opt => <option key={opt}>{opt}</option>)}
                           </select>
                         </div>
-                        <div><label className="block text-xs font-medium mb-1">Número de Documento</label><input required value={c.numDoc} onChange={e=>handleContactoChange(idx, 'numDoc', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
+                        <div><label className="block text-xs font-medium mb-1">Número de Documento</label><input value={c.numDoc} onChange={e=>handleContactoChange(idx, 'numDoc', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
                         
                         <div><label className="block text-xs font-medium mb-1">Cargo / Rol</label><input value={c.rol} onChange={e=>handleContactoChange(idx, 'rol', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
                         <div><label className="block text-xs font-medium mb-1">WhatsApp (Móvil)</label><input required value={c.telefono} onChange={e=>handleContactoChange(idx, 'telefono', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
@@ -592,9 +592,9 @@ export default function Directorio() {
               {/* BLOQUE: GOOGLE DRIVE Y ENLACES */}
               <div className="p-5 bg-gray-50 dark:bg-gray-900/40 rounded-xl border border-gray-100 dark:border-gray-800">
                 <div className="mb-6">
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase flex items-center gap-2 mb-2"><Cloud size={16}/> Carpeta de Google Drive (Obligatorio)</h4>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase flex items-center gap-2 mb-2"><Cloud size={16}/> Carpeta de Google Drive (Opcional)</h4>
                   <p className="text-xs text-gray-500 mb-3">Pega aquí el enlace raíz de la carpeta maestra del cliente donde se alojan sus recursos, contratos y diseños.</p>
-                  <input required type="url" value={form.linkDrive} onChange={e=>setForm({...form, linkDrive: e.target.value})} placeholder="https://drive.google.com/..." className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/>
+                  <input type="url" value={form.linkDrive} onChange={e=>setForm({...form, linkDrive: e.target.value})} placeholder="https://drive.google.com/..." className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/>
                 </div>
 
                 <div className="flex justify-between items-center mb-4 border-t border-gray-200 dark:border-gray-800 pt-4">

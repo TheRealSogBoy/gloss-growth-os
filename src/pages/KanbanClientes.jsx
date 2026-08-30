@@ -102,6 +102,25 @@ export default function KanbanClientes() {
   
   // Modal
   const [selectedCliente, setSelectedCliente] = useState(null);
+    const [showLeadModal, setShowLeadModal] = useState(false);
+    const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto' });
+
+    const handleSaveLead = async (e) => {
+      e.preventDefault();
+      const payload = {
+        negocio_nombre: leadForm.nombre_clinica,
+        contactos: [{ nombre: leadForm.nombre_contacto, telefono: leadForm.telefono, rol: 'Prospecto' }],
+        contrato_notas: `Interés: ${leadForm.interes}. Próxima acción: ${leadForm.fecha_accion}`,
+        contrato_valor: leadForm.valor,
+        etapa_comercial: leadForm.columna,
+        estado_contrato: 'Prospecto'
+      };
+      const { data, error } = await supabase.from('clientes').insert([payload]).select();
+      if (!error && data && data.length > 0) {
+        setClientes([mapToKanbanForm(data[0]), ...clientes]);
+        setShowLeadModal(false);
+      }
+    };
 
   // === FILTRADO ===
   const clientesFiltrados = useMemo(() => {
@@ -116,19 +135,29 @@ export default function KanbanClientes() {
   // === DRAG & DROP ===
   const onDragStart = (e, id) => e.dataTransfer.setData('clientId', id);
   const onDragOver = (e) => e.preventDefault();
-  const onDrop = (e, nuevaColumna) => {
-    const id = parseInt(e.dataTransfer.getData('clientId'));
-    if(!id) return;
-    setClientes(prev => prev.map(c => 
-      c.id === id ? { ...c, contrato: { ...(c.contrato || {}), estadoContrato: nuevaColumna } } : c
-    ));
-  };
+  const onDrop = async (e, nuevaColumna) => {
+      const id = parseInt(e.dataTransfer.getData('clientId'));
+      if(!id) return;
+      
+      setClientes(prev => prev.map(c => 
+        c.id === id ? { ...c, contrato: { ...(c.contrato || {}), estadoContrato: nuevaColumna } } : c
+      ));
 
-  const changeStatus = (id, newStatus) => {
-    setClientes(prev => prev.map(c => 
-      c.id === id ? { ...c, contrato: { ...(c.contrato || {}), estadoContrato: newStatus } } : c
-    ));
-  };
+      // Sincronizar con Supabase
+      const payload = { etapa_comercial: nuevaColumna };
+      if (nuevaColumna === 'Activo') payload.estado_contrato = 'Activo';
+      await supabase.from('clientes').update(payload).eq('id', id);
+    };
+
+  const changeStatus = async (id, newStatus) => {
+      setClientes(prev => prev.map(c => 
+        c.id === id ? { ...c, contrato: { ...(c.contrato || {}), estadoContrato: newStatus } } : c
+      ));
+
+      const payload = { etapa_comercial: newStatus };
+      if (newStatus === 'Activo') payload.estado_contrato = 'Activo';
+      await supabase.from('clientes').update(payload).eq('id', id);
+    };
 
   // === ACTUALIZACIÓN DEL MODAL ===
   const updateSelected = (updates) => {
@@ -147,9 +176,9 @@ export default function KanbanClientes() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-          <button onClick={() => navigate('/directorio', { state: { openNewModal: true } })} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
-            <Plus size={16}/> Nuevo Prospecto
-          </button>
+          <button onClick={() => { setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto' }); setShowLeadModal(true); }} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
+              <Plus size={16}/> Nuevo Prospecto
+            </button>
           <div className="relative">
             <Filter size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"/>
             <select 
