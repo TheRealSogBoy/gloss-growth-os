@@ -10,7 +10,7 @@ import { supabase } from '../supabaseClient';
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
-const INITIAL_CATALOGO = [
+export const INITIAL_CATALOGO = [
   {
      nombre: 'Pauta Digital (Meta Ads)', categoria: 'Publicidad',
     tipoPrecio: 'base', precio: 600000, precioMax: null, icono: 'Megaphone',

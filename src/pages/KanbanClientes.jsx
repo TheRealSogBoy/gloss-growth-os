@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { INITIAL_CATALOGO } from './Catalogo';
 import { 
   Building2, User, DollarSign, GripVertical, MapPin, 
   X, Phone, Mail, FileText, ChevronRight, Filter, Video, Calendar, AlertCircle, Clock, Plus
@@ -89,8 +90,10 @@ export default function KanbanClientes() {
           supabase.from('catalogo_servicios').select('id, nombre, categoria').order('nombre', { ascending: true })
         ]);
         
-        if (resCatalogo.data) {
+        if (resCatalogo.data && resCatalogo.data.length > 0) {
           setCatalogo(resCatalogo.data);
+        } else {
+          setCatalogo(INITIAL_CATALOGO);
         }
 
         const { data, error } = resClientes;
@@ -113,7 +116,7 @@ export default function KanbanClientes() {
   // Modal
   const [selectedCliente, setSelectedCliente] = useState(null);
     const [showLeadModal, setShowLeadModal] = useState(false);
-    const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' });
+    const [leadForm, setLeadForm] = useState({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' });
 
     const handleSaveLead = async (e) => {
       e.preventDefault();
@@ -128,7 +131,7 @@ export default function KanbanClientes() {
         negocio_nombre: leadForm.nombre_clinica,
         contactos: [{ nombre: leadForm.nombre_contacto, telefono: leadForm.telefono, rol: 'Prospecto' }],
         enlaces: enlacesGenerados,
-        contrato_notas: `Interés: ${leadForm.interes}. Próxima acción: ${leadForm.fecha_accion}`,
+        contrato_notas: `Interés: ${(leadForm.interes || []).join(', ')}. Próxima acción: ${leadForm.fecha_accion}`,
         contrato_valor: leadForm.valor,
         etapa_comercial: leadForm.columna,
         estado_contrato: 'Prospecto'
@@ -194,7 +197,7 @@ export default function KanbanClientes() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 items-center">
-          <button onClick={() => { setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: '', valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' }); setShowLeadModal(true); }} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
+          <button onClick={() => { setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '' }); setShowLeadModal(true); }} className="bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-gloss-burgundy/90 transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap">
               <Plus size={16}/> Nuevo Prospecto
             </button>
           <div className="relative">
@@ -498,18 +501,32 @@ export default function KanbanClientes() {
                   <input required value={leadForm.telefono} onChange={e=>setLeadForm({...leadForm, telefono: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="+57..."/>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div>
-                  <label className="block text-sm mb-1">Servicio de Interés</label>
-                  <select value={leadForm.interes} onChange={e=>setLeadForm({...leadForm, interes: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent dark:bg-gray-900">
-                    <option value="">Seleccione un servicio...</option>
-                    {catalogo.map(svc => (
-                      <option key={svc.id} value={svc.nombre}>{svc.nombre} ({svc.categoria})</option>
-                    ))}
-                  </select>
+                  <label className="block text-sm mb-2">Servicios de Interés (Puede elegir varios)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {catalogo.map((svc, idx) => {
+                      const isSelected = leadForm.interes.includes(svc.nombre);
+                      return (
+                        <button 
+                          key={svc.id || idx}
+                          type="button"
+                          onClick={() => {
+                            const newInteres = isSelected 
+                              ? leadForm.interes.filter(i => i !== svc.nombre)
+                              : [...leadForm.interes, svc.nombre];
+                            setLeadForm({...leadForm, interes: newInteres});
+                          }}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${isSelected ? 'bg-gloss-burgundy text-white border-gloss-burgundy shadow-sm' : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gloss-burgundy/50'}`}
+                        >
+                          {svc.nombre}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Valor Estimado</label>
+                  <label className="block text-sm mb-1">Valor Estimado (Total)</label>
                   <input type="number" min="0" value={leadForm.valor} onChange={e=>setLeadForm({...leadForm, valor: e.target.value})} className="w-full px-3 py-2 rounded-lg border dark:border-gray-700 bg-transparent" placeholder="0"/>
                 </div>
               </div>
