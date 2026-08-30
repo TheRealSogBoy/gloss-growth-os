@@ -13,14 +13,14 @@ const INITIAL_EQUIPO = [
 ];
 
 const INITIAL_AGENCIA = {
-  nombre: 'Gloss Growth OS',
-  nit: 'NIT 901.845.230-4',
-  direccion: 'Cra. 43A # 1 Sur - 50, San Fernando Plaza',
-  telefono: '+57 (300) 456-7890',
-  correo: 'contacto@glossgrowth.com',
-  ciudad: 'Medellín, Colombia',
-  sitio_web: 'https://glossgrowhq.com',
-  lema: 'Soluciones Estratégicas para el Sector Salud & Estética'
+  nombre: 'Gloss & Grow',
+  nit: 'C.C. 1.110.363.760',
+  direccion: 'Sede Administrativa',
+  telefono: '+57 (314) 590-4933',
+  correo: 'contacto@glossgrowthhq.com',
+  ciudad: 'Cali, Colombia',
+  sitio_web: 'https://glossgrowthhq.com/',
+  lema: 'Estética que Escala'
 };
 
 export function ConfigProvider({ children }) {

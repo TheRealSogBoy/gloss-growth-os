@@ -132,13 +132,13 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   const fechaVencimiento = new Date(Date.now() + 15 * 86400000);
   const fmtDate = (d) => d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  const nombreAgencia = (agencia?.nombre || 'GLOSS GROWTH').toUpperCase();
-  const lemaAgencia = agencia?.lema || 'Soluciones Estratégicas para el Sector Salud & Estética';
-  const nitAgencia = agencia?.nit ? ` • ${agencia.nit}` : '';
-  const ciudadAgencia = agencia?.ciudad || 'Medellín, Colombia';
-  const webAgencia = agencia?.sitio_web || agencia?.website || 'https://glossgrowhq.com';
-  const correoAgencia = agencia?.correo || '';
-  const telAgencia = agencia?.telefono || '';
+  const nombreAgencia = (agencia?.nombre || 'Gloss & Grow').toUpperCase();
+  const lemaAgencia = agencia?.lema || 'Estética que Escala';
+  const nitAgencia = agencia?.nit ? ` • ${agencia.nit}` : ' • C.C. 1.110.363.760';
+  const ciudadAgencia = agencia?.ciudad || 'Cali, Colombia';
+  const webAgencia = agencia?.sitio_web || agencia?.website || 'https://glossgrowthhq.com/';
+  const correoAgencia = agencia?.correo || 'contacto@glossgrowthhq.com';
+  const telAgencia = agencia?.telefono || '+57 (314) 590-4933';
 
   // ── Paleta corporativa (R,G,B) ──────────────────────────────────────
   const BURGUNDY   = [140, 37, 54];
@@ -333,7 +333,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
   if (y + 30 < pageH - 15) {
     const sigW = (CW - 20) / 2;
     [
-      { label: `Agencia: ${agencia?.nombre || 'Gloss Growth OS'}`, x: M },
+      { label: `Agencia: ${agencia?.nombre || 'Gloss & Grow'}`, x: M },
       { label: `Cliente: ${cliente.nombre}`, x: M + sigW + 20 },
     ].forEach(({ label, x }) => {
       doc.setDrawColor(...GRAY);
@@ -357,7 +357,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
     doc.setFontSize(7);
     doc.setTextColor(...WHITE);
     doc.text(
-      `Cotización #${NUM}  •  ${agencia?.nombre || 'Gloss Growth OS'}  •  ${webAgencia}  •  Página ${i} de ${totalPages}`,
+      `Cotización #${NUM}  •  ${agencia?.nombre || 'Gloss & Grow'}  •  ${webAgencia}  •  Página ${i} de ${totalPages}`,
       W / 2, pageH - 3, { align: 'center' }
     );
   }
