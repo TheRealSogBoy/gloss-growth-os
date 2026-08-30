@@ -18,11 +18,14 @@ export default function KanbanTareasModal({
   const [selectedTagColor, setSelectedTagColor] = useState(ETIQUETAS_COLORES[0]?.class || 'bg-blue-100 text-blue-700 border-blue-200');
   
   const [showLinkMenu, setShowLinkMenu] = useState(false);
+  const [showAsignadosMenu, setShowAsignadosMenu] = useState(false);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [showDateMenu, setShowDateMenu] = useState(false);
   const [newCheckItem, setNewCheckItem] = useState('');
   const [newComment, setNewComment] = useState('');
+  
+  const MIEMBROS_AGENCIA = ['Santiago', 'David', 'Sebas', 'Davilson', 'Daniela', 'Valentina'];
 
   if (!selectedTarea) return null;
   const tarea = selectedTarea || {};
@@ -88,23 +91,20 @@ export default function KanbanTareasModal({
     updateSelected({ etiquetas: updated });
   };
 
-  // Botón "Unirse"
-  const handleJoinTask = () => {
-    const activeUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Miembro Activo';
-    const activeUserEmail = user?.email || '';
-    
-    // Asignar responsable y agregar a asignados
+  // Asignar Miembro
+  const handleAssignUser = (nombre) => {
     const currentAsignados = tarea.asignados || [];
-    const alreadyJoined = currentAsignados.some(a => (typeof a === 'string' && a === activeUserName) || a?.email === activeUserEmail);
+    const alreadyJoined = currentAsignados.some(a => (typeof a === 'string' && a === nombre) || a?.nombre === nombre);
     
     const newAsignados = alreadyJoined 
       ? currentAsignados 
-      : [...currentAsignados, { nombre: activeUserName, email: activeUserEmail }];
+      : [...currentAsignados, { nombre }];
 
     updateSelected({ 
-      responsable: activeUserName,
+      responsable: nombre,
       asignados: newAsignados
     });
+    setShowAsignadosMenu(false);
   };
 
   return (
@@ -345,14 +345,36 @@ export default function KanbanTareasModal({
             <h4 className="text-[11px] font-bold text-gray-500 uppercase mb-2">Acciones</h4>
             <div className="space-y-2">
               
-              {/* Botón Unirse */}
-              <button 
-                type="button"
-                onClick={handleJoinTask} 
-                className="w-full flex items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gloss-burgundy hover:text-white dark:hover:bg-gloss-burgundy border border-gray-200 dark:border-gray-700 text-xs font-bold p-2.5 rounded-xl transition-all shadow-sm"
-              >
-                <User size={15}/> Unirse a la Tarea
-              </button>
+              {/* Selector de Miembros */}
+              <div className="relative">
+                <button 
+                  type="button"
+                  onClick={() => setShowAsignadosMenu(!showAsignadosMenu)} 
+                  className="w-full flex items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-xs font-bold p-2.5 rounded-xl transition-all shadow-sm"
+                >
+                  <User size={15}/> Añadir Miembro
+                </button>
+                {showAsignadosMenu && (
+                  <div className="absolute top-full right-0 md:left-0 mt-1 w-56 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-2 shadow-2xl z-50">
+                    <p className="text-[11px] font-bold text-gray-500 uppercase px-2 mb-2">Asignar a:</p>
+                    <div className="space-y-1">
+                      {MIEMBROS_AGENCIA.map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => handleAssignUser(m)}
+                          className="w-full text-left px-3 py-2 text-xs font-bold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors flex items-center gap-2"
+                        >
+                          <div className="w-5 h-5 rounded-full bg-gloss-burgundy/10 text-gloss-burgundy dark:bg-gloss-pink/10 dark:text-gloss-pink flex items-center justify-center text-[9px]">
+                            {m.substring(0, 2).toUpperCase()}
+                          </div>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
               
               {/* Selector de Etiquetas */}
               <div className="relative">
@@ -402,15 +424,22 @@ export default function KanbanTareasModal({
                   onClick={() => setShowDateMenu(!showDateMenu)} 
                   className="w-full flex items-center gap-2 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-xs font-bold p-2.5 rounded-xl transition-colors shadow-sm"
                 >
-                  <Calendar size={15}/> Fecha Límite
+                  <Calendar size={15}/> 
+                  {tarea.fecha_limite || tarea.fechaLimite ? (
+                    (() => {
+                      const d = new Date(tarea.fecha_limite || tarea.fechaLimite);
+                      if(isNaN(d.getTime())) return 'Fecha Límite';
+                      return `📅 ${d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                    })()
+                  ) : 'Fecha Límite'}
                 </button>
                 {showDateMenu && (
                   <div className="absolute top-full right-0 md:left-0 mt-1 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl p-3 shadow-2xl z-50">
                     <label className="block text-xs font-bold text-gray-500 mb-2">Seleccionar Vencimiento</label>
                     <input 
                       type="date" 
-                      value={tarea.fechaLimite || ''} 
-                      onChange={(e) => { updateSelected({ fechaLimite: e.target.value }); setShowDateMenu(false); }} 
+                      value={tarea.fecha_limite || tarea.fechaLimite || ''} 
+                      onChange={(e) => { updateSelected({ fecha_limite: e.target.value }); setShowDateMenu(false); }} 
                       className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-1 focus:ring-gloss-burgundy bg-transparent cursor-pointer"
                     />
                   </div>
@@ -433,8 +462,12 @@ export default function KanbanTareasModal({
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setShowLinkMenu(false)} className="px-2.5 py-1 text-xs text-gray-500">Cancelar</button>
                       <button type="button" onClick={() => {
-                        if (!newLinkUrl) return;
-                        updateSelected({ enlaces: [...(tarea.enlaces || []), { title: newLinkTitle || 'Link Adjunto', url: newLinkUrl }] });
+                        let finalUrl = newLinkUrl.trim();
+                        if (!finalUrl) return;
+                        if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+                          finalUrl = `https://${finalUrl}`;
+                        }
+                        updateSelected({ enlaces: [...(tarea.enlaces || []), { title: newLinkTitle || 'Link Adjunto', url: finalUrl }] });
                         setNewLinkTitle(''); setNewLinkUrl(''); setShowLinkMenu(false);
                       }} className="px-3 py-1 text-xs text-white bg-gloss-burgundy rounded-lg font-bold">Adjuntar</button>
                     </div>
@@ -452,7 +485,7 @@ export default function KanbanTareasModal({
               <div className="space-y-1.5">
                 {tarea.enlaces.map((link, i) => (
                   <div key={i} className="flex items-center justify-between bg-blue-50 dark:bg-blue-950/30 p-2 rounded-xl border border-blue-100 dark:border-blue-900/40 group">
-                    <a href={link.url?.startsWith('http') ? link.url : `https://${link.url}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-400 hover:underline min-w-0">
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-400 hover:underline min-w-0">
                       <Link2 size={13} className="flex-shrink-0"/> <span className="truncate">{link.title || link.url}</span>
                     </a>
                     <button onClick={() => { const nl = [...(tarea.enlaces || [])]; nl.splice(i, 1); updateSelected({ enlaces: nl }); }} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 p-0.5"><Trash2 size={13}/></button>
