@@ -663,7 +663,7 @@ export default function Catalogo() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Precio Principal</label>
-                  <input type="number" value={svcForm.precio} onChange={(e) => setSvcForm({ ...svcForm, precio: e.target.value })} disabled={svcForm.tipoPrecio === 'custom'} className="w-full px-3 py-2 text-sm rounded-lg border bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 disabled:opacity-50"/>
+                  <input type="number" value={svcForm.precio} onChange={(e) => setSvcForm({ ...svcForm, precio: e.target.value })} className="w-full px-3 py-2 text-sm rounded-lg border bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 disabled:opacity-50"/>
                 </div>
               </div>
               {svcForm.tipoPrecio === 'rango' && (
@@ -680,10 +680,12 @@ export default function Catalogo() {
                 <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Entregables (uno por línea)</label>
                 <textarea required value={svcForm.entregablesText} onChange={(e) => setSvcForm({ ...svcForm, entregablesText: e.target.value })} placeholder={'Entregable 1\nEntregable 2…'} className="w-full px-3 py-2 text-sm rounded-lg border bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 min-h-[90px]"/>
               </div>
-              <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
-                <button type="submit" className="w-full bg-gloss-burgundy text-white py-3 rounded-xl font-bold hover:bg-gloss-burgundy/90 shadow-md">Guardar Servicio</button>
-              </div>
-            </form>
+              </form>
+            </div>
+            
+            <div className="p-5 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 rounded-b-2xl flex-shrink-0">
+              <button form="svc-form" type="submit" className="w-full bg-gloss-burgundy hover:bg-gloss-burgundy/90 text-white font-bold py-2.5 rounded-xl transition-all shadow-md">Guardar Servicio</button>
+            </div>
           </div>
         </div>
       )}

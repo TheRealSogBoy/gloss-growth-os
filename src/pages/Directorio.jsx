@@ -243,6 +243,25 @@ export default function Directorio() {
   const handlePlanPagoChange = (index, field, value) => {
     const updated = [...form.contrato.planPagos];
     updated[index] = { ...updated[index], [field]: value };
+    
+    // Autofill monto basado en concepto
+    if (field === 'concepto') {
+      const valorTotal = Number(form.contrato.valor) || 0;
+      if (value === 'Pago Completo') {
+        updated[index].monto = valorTotal;
+      } else if (value.includes('50%')) {
+        updated[index].monto = valorTotal / 2;
+      }
+    }
+    
+    // Validar que monto no supere Valor Total
+    if (field === 'monto') {
+      const valorTotal = Number(form.contrato.valor) || 0;
+      if (Number(value) > valorTotal) {
+        updated[index].monto = valorTotal;
+      }
+    }
+    
     setForm({ ...form, contrato: { ...form.contrato, planPagos: updated }});
   };
   const addPlanPago = () => setForm({...form, contrato: {...form.contrato, planPagos: [...form.contrato.planPagos, { id: Date.now(), concepto: '', monto: '', fechaLimite: '', estado: 'Pendiente' }]}});
@@ -584,10 +603,45 @@ export default function Directorio() {
                             {documentosOpciones.map(opt => <option key={opt}>{opt}</option>)}
                           </select>
                         </div>
-                        <div><label className="block text-xs font-medium mb-1">Número de Documento</label><input value={c.numDoc} onChange={e=>handleContactoChange(idx, 'numDoc', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
+                        <div><label className="block text-xs font-medium mb-1">Número de Documento</label><input value={c.numDoc} onChange={e=>handleContactoChange(idx, 'numDoc', e.target.value.replace(/\D/g, ''))} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
                         
                         <div><label className="block text-xs font-medium mb-1">Cargo / Rol</label><input value={c.rol} onChange={e=>handleContactoChange(idx, 'rol', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
-                        <div><label className="block text-xs font-medium mb-1">WhatsApp (Móvil)</label><input required value={c.telefono} onChange={e=>handleContactoChange(idx, 'telefono', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">WhatsApp (Móvil)</label>
+                          <div className="flex gap-2">
+                            <select 
+                              value={c.prefix || '+57'} 
+                              onChange={e => {
+                                const newPrefix = e.target.value;
+                                handleContactoChange(idx, 'prefix', newPrefix);
+                                if (c.telefonoRaw) {
+                                   handleContactoChange(idx, 'telefono', `${newPrefix} ${c.telefonoRaw}`);
+                                }
+                              }} 
+                              className="px-2 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"
+                            >
+                              <option value="+57">🇨🇴 +57</option>
+                              <option value="+1">🇺🇸 +1</option>
+                              <option value="+52">🇲🇽 +52</option>
+                              <option value="+34">🇪🇸 +34</option>
+                              <option value="+54">🇦🇷 +54</option>
+                              <option value="+56">🇨🇱 +56</option>
+                              <option value="+51">🇵🇪 +51</option>
+                            </select>
+                            <input 
+                              required 
+                              value={c.telefonoRaw !== undefined ? c.telefonoRaw : (c.telefono?.includes(' ') ? c.telefono.split(' ').slice(1).join(' ') : c.telefono)} 
+                              onChange={e => {
+                                const newRaw = e.target.value.replace(/\D/g, '');
+                                const currentPrefix = c.prefix || (c.telefono?.includes(' ') ? c.telefono.split(' ')[0] : '+57');
+                                handleContactoChange(idx, 'telefonoRaw', newRaw);
+                                handleContactoChange(idx, 'telefono', `${currentPrefix} ${newRaw}`);
+                                if(!c.prefix) handleContactoChange(idx, 'prefix', currentPrefix);
+                              }} 
+                              className="flex-1 px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"
+                            />
+                          </div>
+                        </div>
                         <div className="lg:col-span-2"><label className="block text-xs font-medium mb-1">Correo Electrónico</label><input type="email" value={c.correo} onChange={e=>handleContactoChange(idx, 'correo', e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/></div>
                       </div>
                     </div>
@@ -616,7 +670,48 @@ export default function Directorio() {
                         </select>
                         <button type="button" onClick={()=>removeEnlace(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={14}/></button>
                       </div>
-                      <input value={enlace.url} onChange={e=>handleEnlaceChange(idx, 'url', e.target.value)} placeholder="URL" className="w-full px-3 py-1.5 text-xs rounded-md border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/>
+                      {enlace.red === 'WhatsApp' ? (
+                        <div className="flex flex-col gap-1 mt-1">
+                          <div className="flex gap-1">
+                            <select 
+                              value={enlace.prefix || '+57'} 
+                              onChange={e => {
+                                const p = e.target.value;
+                                handleEnlaceChange(idx, 'prefix', p);
+                                if (enlace.numero) handleEnlaceChange(idx, 'url', `https://wa.me/${p.replace('+', '')}${enlace.numero}`);
+                              }} 
+                              className="w-[45%] px-1 py-1.5 text-xs rounded-md border dark:border-gray-700 bg-white dark:bg-gray-900"
+                            >
+                              <option value="+57">🇨🇴 +57</option>
+                              <option value="+1">🇺🇸 +1</option>
+                              <option value="+52">🇲🇽 +52</option>
+                              <option value="+34">🇪🇸 +34</option>
+                              <option value="+54">🇦🇷 +54</option>
+                              <option value="+56">🇨🇱 +56</option>
+                              <option value="+51">🇵🇪 +51</option>
+                            </select>
+                            <input 
+                              type="tel" 
+                              value={enlace.numero !== undefined ? enlace.numero : (enlace.url?.includes('wa.me/') ? enlace.url.split('wa.me/')[1].replace((enlace.prefix || '+57').replace('+', ''), '') : '')} 
+                              onChange={e => {
+                                const num = e.target.value.replace(/\D/g, '');
+                                const p = enlace.prefix || '+57';
+                                handleEnlaceChange(idx, 'numero', num);
+                                handleEnlaceChange(idx, 'url', `https://wa.me/${p.replace('+', '')}${num}`);
+                              }} 
+                              placeholder="Número..." 
+                              className="w-[55%] px-2 py-1.5 text-xs rounded-md border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"
+                            />
+                          </div>
+                          {enlace.url && enlace.url.includes('wa.me') && (
+                            <a href={enlace.url} target="_blank" rel="noreferrer" className="text-[10px] text-green-600 hover:underline mt-1 flex items-center gap-1 truncate font-medium">
+                              {enlace.url}
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <input value={enlace.url} onChange={e=>handleEnlaceChange(idx, 'url', e.target.value)} placeholder="URL" className="w-full mt-1 px-3 py-1.5 text-xs rounded-md border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -633,7 +728,7 @@ export default function Directorio() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium mb-1">Valor Total (Meta)</label>
+                    <label className="block text-xs font-medium mb-1">Valor Total</label>
                     <input required type="number" min="0" value={form.contrato.valor} onChange={e=>setForm({...form, contrato:{...form.contrato, valor: e.target.value}})} className="w-full px-3 py-2 text-sm rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy"/>
                   </div>
                   <div>

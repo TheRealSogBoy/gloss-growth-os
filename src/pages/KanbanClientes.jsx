@@ -694,7 +694,35 @@ export default function KanbanClientes() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">WhatsApp / Teléfono *</label>
-                  <input required value={leadForm.telefono} onChange={e=>setLeadForm({...leadForm, telefono: e.target.value})} className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium outline-none focus:ring-2 focus:ring-gloss-burgundy" placeholder="+57..."/>
+                  <div className="flex gap-2">
+                    <select 
+                      value={leadForm.prefix || '+57'} 
+                      onChange={e => {
+                        const newPrefix = e.target.value;
+                        setLeadForm({ ...leadForm, prefix: newPrefix, telefono: `${newPrefix} ${leadForm.telefonoRaw || ''}` });
+                      }} 
+                      className="px-2 py-2 text-xs sm:text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium outline-none focus:ring-2 focus:ring-gloss-burgundy"
+                    >
+                      <option value="+57">🇨🇴 +57</option>
+                      <option value="+1">🇺🇸 +1</option>
+                      <option value="+52">🇲🇽 +52</option>
+                      <option value="+34">🇪🇸 +34</option>
+                      <option value="+54">🇦🇷 +54</option>
+                      <option value="+56">🇨🇱 +56</option>
+                      <option value="+51">🇵🇪 +51</option>
+                    </select>
+                    <input 
+                      required 
+                      value={leadForm.telefonoRaw !== undefined ? leadForm.telefonoRaw : (leadForm.telefono?.includes(' ') ? leadForm.telefono.split(' ').slice(1).join(' ') : leadForm.telefono)} 
+                      onChange={e => {
+                        const newRaw = e.target.value.replace(/\D/g, '');
+                        const currentPrefix = leadForm.prefix || (leadForm.telefono?.includes(' ') ? leadForm.telefono.split(' ')[0] : '+57');
+                        setLeadForm({...leadForm, telefonoRaw: newRaw, telefono: `${currentPrefix} ${newRaw}`, prefix: currentPrefix});
+                      }} 
+                      className="flex-1 px-3 py-2 text-xs sm:text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium outline-none focus:ring-2 focus:ring-gloss-burgundy" 
+                      placeholder="3001234567"
+                    />
+                  </div>
                 </div>
               </div>
 
