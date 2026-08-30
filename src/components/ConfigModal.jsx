@@ -1,78 +1,175 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  X, Users, Building2, Plus, Pencil, Trash2, Check, 
-  Mail, Briefcase, Phone, MapPin, FileText, Sparkles, ShieldCheck
+  X, Users, Building2, Plus, Trash2, Check, 
+  Mail, Phone, Sparkles, ShieldCheck, KeyRound, Copy,
+  CheckCheck, Crown, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
-
-const COLOR_OPTIONS = [
-  { label: 'Borgoña', class: 'bg-rose-600 text-white' },
-  { label: 'Púrpura', class: 'bg-purple-600 text-white' },
-  { label: 'Rosa', class: 'bg-pink-600 text-white' },
-  { label: 'Ámbar', class: 'bg-amber-600 text-white' },
-  { label: 'Azul', class: 'bg-blue-600 text-white' },
-  { label: 'Esmeralda', class: 'bg-emerald-600 text-white' },
-  { label: 'Índigo', class: 'bg-indigo-600 text-white' },
-  { label: 'Gris Oscuro', class: 'bg-gray-800 text-white' },
-];
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabaseClient';
+import { logAuditoria } from '../utils/audit';
 
 export default function ConfigModal({ isOpen, onClose }) {
   const { 
-    equipo, 
     datosAgencia, 
-    addMiembro, 
-    updateMiembro, 
-    deleteMiembro, 
     updateDatosAgencia 
   } = useConfig();
 
-  const [activeTab, setActiveTab] = useState('equipo'); // 'equipo' | 'agencia'
-  
-  // Estado para formulario de miembro (crear / editar)
-  const [editingMember, setEditingMember] = useState(null); // null = no form, {} = nuevo o edit
-  const [memberForm, setMemberForm] = useState({
-    nombre: '',
-    cargo: '',
-    correo: '',
-    color: 'bg-rose-600 text-white'
-  });
+  const { user, isSuperAdmin } = useAuth();
 
-  // Estado para formulario de agencia
+  const [activeTab, setActiveTab] = useState('miembros_db'); // 'miembros_db' | 'agencia'
+  
+  // Database-backed perfiles_usuarios list
+  const [dbMembers, setDbMembers] = useState([]);
+  const [loadingDbMembers, setLoadingDbMembers] = useState(false);
+
+  // New Member Modal / Form
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newMemberForm, setNewMemberForm] = useState({
+    email: '',
+    rol: 'socio',
+    codigo_acceso: '',
+  });
+  const [copiedCode, setCopiedCode] = useState(null);
+  const [addError, setAddError] = useState('');
+  const [lastCreatedInvitation, setLastCreatedInvitation] = useState(null);
+
+  // Agency Form
   const [agenciaForm, setAgenciaForm] = useState({ ...datosAgencia });
   const [savedAgenciaAlert, setSavedAgenciaAlert] = useState(false);
 
+  const generateRandomCode = () => {
+    return `GLOSS-${Math.floor(1000 + Math.random() * 9000)}`;
+  };
+
+  const fetchDbMembers = useCallback(async () => {
+    setLoadingDbMembers(true);
+    try {
+      const { data, error } = await supabase
+        .from('perfiles_usuarios')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setDbMembers(data);
+      }
+    } catch (err) {
+      console.error('Error loading db members:', err);
+    } finally {
+      setLoadingDbMembers(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchDbMembers();
+      setAgenciaForm({ ...datosAgencia });
+      setLastCreatedInvitation(null);
+      setAddError('');
+    }
+  }, [isOpen, fetchDbMembers, datosAgencia]);
+
   if (!isOpen) return null;
 
-  const handleOpenAddMember = () => {
-    setMemberForm({
-      nombre: '',
-      cargo: '',
-      correo: '',
-      color: 'bg-rose-600 text-white'
+  const handleOpenAddModal = () => {
+    setNewMemberForm({
+      email: '',
+      rol: 'socio',
+      codigo_acceso: generateRandomCode(),
     });
-    setEditingMember('new');
+    setAddError('');
+    setLastCreatedInvitation(null);
+    setIsAddModalOpen(true);
   };
 
-  const handleOpenEditMember = (m) => {
-    setMemberForm({
-      nombre: m.nombre,
-      cargo: m.cargo,
-      correo: m.correo,
-      color: m.color || 'bg-rose-600 text-white'
-    });
-    setEditingMember(m.id);
-  };
-
-  const handleSaveMember = (e) => {
+  const handleSaveNewMember = async (e) => {
     e.preventDefault();
-    if (!memberForm.nombre.trim()) return;
+    setAddError('');
 
-    if (editingMember === 'new') {
-      addMiembro(memberForm);
-    } else if (typeof editingMember === 'number') {
-      updateMiembro(editingMember, memberForm);
+    const emailTrimmed = (newMemberForm.email || '').trim().toLowerCase();
+    const codeTrimmed = (newMemberForm.codigo_acceso || '').trim().toUpperCase();
+
+    if (!emailTrimmed) {
+      setAddError('Ingresa un correo electrónico válido.');
+      return;
     }
-    setEditingMember(null);
+    if (!codeTrimmed) {
+      setAddError('Ingresa o genera un código de acceso.');
+      return;
+    }
+
+    // Check if email already exists
+    const exists = dbMembers.some((m) => m.email?.toLowerCase() === emailTrimmed);
+    if (exists) {
+      setAddError('Ya existe un miembro o invitación registrada con este correo.');
+      return;
+    }
+
+    try {
+      const payload = {
+        email: emailTrimmed,
+        rol: newMemberForm.rol,
+        codigo_acceso: codeTrimmed,
+        perfil_completado: false,
+        activo: true,
+        nombre_completo: emailTrimmed.split('@')[0],
+      };
+
+      const { data, error } = await supabase
+        .from('perfiles_usuarios')
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await logAuditoria(
+        user,
+        'Configuración / Equipo',
+        'CREAR',
+        `Invitación creada para ${emailTrimmed} con rol ${newMemberForm.rol}`
+      );
+
+      setLastCreatedInvitation(data);
+      setIsAddModalOpen(false);
+      fetchDbMembers();
+    } catch (err) {
+      console.error('Error inserting member:', err);
+      setAddError(err.message || 'Error al guardar la invitación.');
+    }
+  };
+
+  const handleDeleteMember = async (memberId, memberEmail) => {
+    if (memberEmail?.toLowerCase() === user?.email?.toLowerCase()) {
+      alert('No puedes eliminar tu propia cuenta de administrador.');
+      return;
+    }
+
+    if (
+      window.confirm(
+        `¿Seguro que deseas revocar el acceso y eliminar a "${memberEmail}" de Gloss Growth OS?`
+      )
+    ) {
+      try {
+        await supabase.from('perfiles_usuarios').delete().eq('id', memberId);
+        await logAuditoria(
+          user,
+          'Configuración / Equipo',
+          'ELIMINAR',
+          `Acceso revocado a ${memberEmail}`
+        );
+        fetchDbMembers();
+      } catch (err) {
+        console.error('Error deleting member:', err);
+        alert('Hubo un error al eliminar el miembro.');
+      }
+    }
+  };
+
+  const copyToClipboard = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCode(id);
+    setTimeout(() => setCopiedCode(null), 2500);
   };
 
   const handleSaveAgencia = (e) => {
@@ -84,20 +181,27 @@ export default function ConfigModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white dark:bg-gloss-black rounded-2xl w-full max-w-3xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] overflow-hidden">
+      <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-4xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Modal Header */}
         <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-900/50 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gloss-burgundy/10 dark:bg-gloss-burgundy/20 flex items-center justify-center text-gloss-burgundy dark:text-gloss-pink">
+            <div className="w-10 h-10 rounded-2xl bg-gloss-burgundy/10 dark:bg-gloss-pink/10 flex items-center justify-center text-gloss-burgundy dark:text-gloss-pink">
               <Sparkles size={20} />
             </div>
             <div>
-              <h2 className="text-2xl font-zodiak font-bold text-gloss-burgundy dark:text-gloss-inverted">
-                Configuración del Sistema
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Gestión de equipo interno y branding oficial de Gloss Growth OS
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-zodiak font-bold text-gloss-burgundy dark:text-gloss-inverted">
+                  Configuración del Sistema
+                </h2>
+                {isSuperAdmin && (
+                  <span className="bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 text-[10px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Crown size={11} /> SuperAdmin
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Control de acceso, gestión de miembros e identidad oficial de la agencia
               </p>
             </div>
           </div>
@@ -112,19 +216,19 @@ export default function ConfigModal({ isOpen, onClose }) {
         {/* Tab Navigation */}
         <div className="flex border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/20 px-6 pt-3 gap-3 flex-shrink-0">
           <button
-            onClick={() => { setActiveTab('equipo'); setEditingMember(null); }}
+            onClick={() => setActiveTab('miembros_db')}
             className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold border-b-2 transition-all ${
-              activeTab === 'equipo'
+              activeTab === 'miembros_db'
                 ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink'
                 : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-300'
             }`}
           >
             <Users size={16} />
-            <span>Equipo de la Agencia ({equipo.length})</span>
+            <span>Gestión de Miembros & Invitaciones ({dbMembers.length})</span>
           </button>
 
           <button
-            onClick={() => { setActiveTab('agencia'); setEditingMember(null); }}
+            onClick={() => setActiveTab('agencia')}
             className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold border-b-2 transition-all ${
               activeTab === 'agencia'
                 ? 'border-gloss-burgundy text-gloss-burgundy dark:border-gloss-pink dark:text-gloss-pink'
@@ -137,176 +241,211 @@ export default function ConfigModal({ isOpen, onClose }) {
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
           
-          {/* TAB 1: EQUIPO */}
-          {activeTab === 'equipo' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
+          {/* TAB 1: GESTIÓN DE MIEMBROS */}
+          {activeTab === 'miembros_db' && (
+            <div className="space-y-5">
+              
+              {/* Header Action Bar */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
                   <h3 className="font-bold text-gray-900 dark:text-white text-base">
-                    Miembros del Equipo
+                    Equipo Autorizado de Gloss Growth
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    Alimentan automáticamente los selectores de responsable en Tareas, Calendario y CRM.
+                    Solo los usuarios con una invitación registrada pueden acceder con Google OAuth.
                   </p>
                 </div>
-                {!editingMember && (
+
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={handleOpenAddMember}
-                    className="flex items-center gap-1.5 bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-gloss-burgundy/90 transition-all shadow-sm"
+                    onClick={fetchDbMembers}
+                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+                    title="Actualizar lista"
                   >
-                    <Plus size={15} /> Añadir Miembro
+                    <RefreshCw size={15} className={loadingDbMembers ? 'animate-spin' : ''} />
                   </button>
-                )}
+
+                  {isSuperAdmin && (
+                    <button
+                      onClick={handleOpenAddModal}
+                      className="flex items-center gap-1.5 bg-gloss-burgundy text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-gloss-burgundy/90 transition-all shadow-md"
+                    >
+                      <Plus size={15} /> Añadir Miembro / Invitar
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Formulario Inline de Crear/Editar */}
-              {editingMember && (
-                <form onSubmit={handleSaveMember} className="bg-gray-50 dark:bg-gray-900/60 p-5 rounded-2xl border border-gloss-burgundy/30 animate-scale-in space-y-4">
-                  <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-800 pb-3">
-                    <h4 className="font-bold text-sm text-gloss-burgundy dark:text-gloss-pink flex items-center gap-2">
-                      <Briefcase size={16} />
-                      {editingMember === 'new' ? 'Registrar Nuevo Miembro' : 'Editar Datos de Miembro'}
-                    </h4>
-                    <button 
-                      type="button" 
-                      onClick={() => setEditingMember(null)}
-                      className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                        Nombre Completo / Rol
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ej. Davilson"
-                        value={memberForm.nombre}
-                        onChange={(e) => setMemberForm({ ...memberForm, nombre: e.target.value })}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
-                      />
+              {/* Banner with Last Created Invitation Details */}
+              {lastCreatedInvitation && (
+                <div className="p-4 bg-gloss-pink/15 dark:bg-gloss-pink/10 border border-gloss-pink/40 rounded-2xl animate-scale-in">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <KeyRound size={18} className="text-gloss-burgundy dark:text-gloss-pink" />
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        ¡Invitación Generada con Éxito!
+                      </h4>
                     </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                        Cargo / Especialidad
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ej. Director Creativo & Ads"
-                        value={memberForm.cargo}
-                        onChange={(e) => setMemberForm({ ...memberForm, cargo: e.target.value })}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                        Correo Corporativo
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="ejemplo@glossgrowth.com"
-                        value={memberForm.correo}
-                        onChange={(e) => setMemberForm({ ...memberForm, correo: e.target.value })}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                        Color de Avatar / Identificador
-                      </label>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {COLOR_OPTIONS.map((c, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setMemberForm({ ...memberForm, color: c.class })}
-                            className={`w-7 h-7 rounded-full ${c.class.split(' ')[0]} flex items-center justify-center transition-transform ${
-                              memberForm.color === c.class ? 'ring-2 ring-offset-2 ring-gloss-burgundy scale-110' : 'opacity-70 hover:opacity-100'
-                            }`}
-                            title={c.label}
-                          >
-                            {memberForm.color === c.class && <Check size={14} className="text-white" />}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
                     <button
-                      type="button"
-                      onClick={() => setEditingMember(null)}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800"
+                      onClick={() => setLastCreatedInvitation(null)}
+                      className="text-gray-400 hover:text-gray-600"
                     >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl text-xs font-bold bg-gloss-burgundy text-white hover:bg-gloss-burgundy/90 shadow-sm"
-                    >
-                      Guardar Miembro
+                      <X size={14} />
                     </button>
                   </div>
-                </form>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                    Envía este código de acceso a <strong className="text-gloss-burgundy dark:text-gloss-pink">{lastCreatedInvitation.email}</strong> para que complete su registro al iniciar sesión con Google:
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <span className="font-mono text-sm font-black bg-white dark:bg-gray-900 px-3 py-1.5 rounded-xl border border-gloss-burgundy/30 text-gloss-burgundy dark:text-gloss-pink">
+                      {lastCreatedInvitation.codigo_acceso}
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(lastCreatedInvitation.codigo_acceso, 'last_created')}
+                      className="flex items-center gap-1 text-xs bg-white dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 font-semibold"
+                    >
+                      {copiedCode === 'last_created' ? (
+                        <>
+                          <CheckCheck size={14} className="text-green-500" />
+                          <span className="text-green-600 dark:text-green-400">¡Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} />
+                          <span>Copiar Código</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               )}
 
-              {/* Lista de Miembros */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {equipo.map((m) => (
-                  <div
-                    key={m.id}
-                    className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/40 hover:border-gray-300 dark:hover:border-gray-700 flex items-center justify-between gap-3 transition-all"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 ${m.color || 'bg-rose-600 text-white'}`}>
-                        {m.iniciales || m.nombre.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-sm text-gray-900 dark:text-white truncate">
-                          {m.nombre}
-                        </h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {m.cargo}
-                        </p>
-                        <p className="text-[11px] text-gray-400 truncate flex items-center gap-1 mt-0.5">
-                          <Mail size={11} /> {m.correo}
-                        </p>
-                      </div>
-                    </div>
+              {/* Members Table */}
+              <div className="border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden bg-white dark:bg-gloss-black">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[650px]">
+                    <thead className="bg-gray-50/80 dark:bg-gray-900/60 border-b border-gray-100 dark:border-gray-800 text-gray-400 dark:text-gray-500 uppercase tracking-wider font-bold text-[10px]">
+                      <tr>
+                        <th className="py-3 px-4">Miembro / Correo</th>
+                        <th className="py-3 px-4">Rol</th>
+                        <th className="py-3 px-4">Código de Acceso</th>
+                        <th className="py-3 px-4">Estado</th>
+                        <th className="py-3 px-4">Teléfono</th>
+                        {isSuperAdmin && <th className="py-3 px-4 text-center">Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {dbMembers.map((m) => {
+                        const isYou = m.email?.toLowerCase() === user?.email?.toLowerCase();
+                        const isComplete = m.perfil_completado;
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleOpenEditMember(m)}
-                        className="p-1.5 text-gray-400 hover:text-gloss-burgundy hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                        title="Editar Miembro"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`¿Seguro que deseas eliminar a "${m.nombre}" del equipo?`)) {
-                            deleteMiembro(m.id);
-                          }
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        title="Eliminar Miembro"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                        return (
+                          <tr 
+                            key={m.id} 
+                            className={`hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors ${
+                              isYou ? 'bg-gloss-burgundy/[0.02] dark:bg-gloss-pink/[0.02]' : ''
+                            }`}
+                          >
+                            {/* Member info */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-gloss-burgundy/10 dark:bg-gloss-pink/15 flex items-center justify-center font-bold text-gloss-burgundy dark:text-gloss-pink flex-shrink-0">
+                                  {(m.nombre_completo || m.email).slice(0, 2).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-gray-900 dark:text-white truncate">
+                                      {m.nombre_completo || 'Invitación Pendiente'}
+                                    </span>
+                                    {isYou && (
+                                      <span className="text-[9px] bg-gloss-burgundy text-white px-1.5 py-0.2 rounded font-bold">
+                                        Tú
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-gray-400 block truncate">
+                                    {m.email}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Rol */}
+                            <td className="py-3.5 px-4">
+                              <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] border ${
+                                m.rol === 'superadmin' 
+                                  ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300' 
+                                  : m.rol === 'socio'
+                                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-300'
+                                  : m.rol === 'comercial'
+                                  ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-300'
+                                  : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300'
+                              }`}>
+                                {m.rol}
+                              </span>
+                            </td>
+
+                            {/* Código de Acceso */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-1.5">
+                                <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded font-mono font-bold text-gray-800 dark:text-gray-200">
+                                  {m.codigo_acceso}
+                                </code>
+                                <button
+                                  onClick={() => copyToClipboard(m.codigo_acceso, m.id)}
+                                  className="p-1 text-gray-400 hover:text-gloss-burgundy dark:hover:text-gloss-pink rounded transition-colors"
+                                  title="Copiar código"
+                                >
+                                  {copiedCode === m.id ? (
+                                    <CheckCheck size={13} className="text-green-500" />
+                                  ) : (
+                                    <Copy size={13} />
+                                  )}
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Estado */}
+                            <td className="py-3.5 px-4">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isComplete 
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400' 
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isComplete ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                {isComplete ? 'Activo' : 'Pendiente Onboarding'}
+                              </span>
+                            </td>
+
+                            {/* Teléfono */}
+                            <td className="py-3.5 px-4 text-gray-500 dark:text-gray-400">
+                              {m.telefono || '—'}
+                            </td>
+
+                            {/* Acciones */}
+                            {isSuperAdmin && (
+                              <td className="py-3.5 px-4 text-center">
+                                {!isYou ? (
+                                  <button
+                                    onClick={() => handleDeleteMember(m.id, m.email)}
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                    title="Revocar acceso"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-300 dark:text-gray-700 text-[11px] font-mono">—</span>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -437,7 +576,7 @@ export default function ConfigModal({ isOpen, onClose }) {
 
         {/* Modal Footer */}
         <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/20 flex-shrink-0 text-xs text-gray-500">
-          <span>Gloss Growth OS • Sistema de Gestión y Branding</span>
+          <span>Gloss Growth OS • Sistema de Seguridad y Control de Acceso</span>
           <button
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold hover:opacity-80 transition-opacity"
@@ -447,6 +586,112 @@ export default function ConfigModal({ isOpen, onClose }) {
         </div>
 
       </div>
+
+      {/* SUBMODAL: AÑADIR MIEMBRO / GENERAR INVITACIÓN */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-800 relative">
+            <button
+              onClick={() => setIsAddModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-5 border-b border-gray-100 dark:border-gray-800 pb-3">
+              <div className="w-9 h-9 rounded-xl bg-gloss-burgundy/10 dark:bg-gloss-pink/10 flex items-center justify-center text-gloss-burgundy dark:text-gloss-pink font-bold">
+                <Plus size={18} />
+              </div>
+              <div>
+                <h3 className="font-zodiak font-bold text-lg text-gray-900 dark:text-white">
+                  Añadir Miembro al Equipo
+                </h3>
+                <p className="text-xs text-gray-400">
+                  Genera una invitación por código para un nuevo socio o colaborador
+                </p>
+              </div>
+            </div>
+
+            {addError && (
+              <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
+                <span>{addError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveNewMember} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">
+                  Correo Electrónico (Google)
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="socio@gmail.com"
+                  value={newMemberForm.email}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, email: e.target.value })}
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1">
+                  Rol en la Agencia
+                </label>
+                <select
+                  value={newMemberForm.rol}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, rol: e.target.value })}
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-gloss-burgundy outline-none font-medium cursor-pointer"
+                >
+                  <option value="socio">Socio / Director</option>
+                  <option value="comercial">Equipo Comercial / Ventas</option>
+                  <option value="media_buyer">Media Buyer / Trafficker</option>
+                  <option value="superadmin">SuperAdmin</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[11px] font-bold uppercase text-gray-500">
+                    Código de Acceso / Invitación
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setNewMemberForm({ ...newMemberForm, codigo_acceso: generateRandomCode() })}
+                    className="text-[11px] text-gloss-burgundy dark:text-gloss-pink hover:underline font-semibold flex items-center gap-1"
+                  >
+                    <RefreshCw size={11} /> Regenerar
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={newMemberForm.codigo_acceso}
+                  onChange={(e) => setNewMemberForm({ ...newMemberForm, codigo_acceso: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-gloss-burgundy outline-none font-mono font-bold tracking-wider uppercase text-gray-900 dark:text-white"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-gloss-burgundy text-white hover:bg-gloss-burgundy/90 shadow-md"
+                >
+                  Crear Invitación
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

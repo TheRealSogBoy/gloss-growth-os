@@ -2,7 +2,7 @@ import { supabase } from '../supabaseClient';
 
 export const logAuditoria = async (user, modulo, accion, detalle) => {
   if (!user) return;
-  const userName = user.user_metadata?.full_name || user.email;
+  const userName = user.nombre_completo || user.user_metadata?.full_name || user.email;
   try {
     // 1. Insert into auditoria_logs
     await supabase.from('auditoria_logs').insert([{

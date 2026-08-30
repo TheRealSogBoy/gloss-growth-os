@@ -18,7 +18,9 @@ import {
   X,
   Settings,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  ShieldCheck,
+  Crown
 } from 'lucide-react';
 import ConfigModal from './ConfigModal';
 
@@ -44,7 +46,7 @@ export default function Layout() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, perfil, isSuperAdmin, signOut } = useAuth();
   const { unreadCount } = useNotifications();
   const userMenuRef = useRef(null);
 
@@ -82,8 +84,47 @@ export default function Layout() {
   ];
 
   const userAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
-  const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Socio';
-  const userEmail = user?.email || '';
+  const userName = perfil?.nombre_completo || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Miembro';
+  const userEmail = perfil?.email || user?.email || '';
+  const userRole = (perfil?.rol || 'socio').toLowerCase();
+
+  const getRoleBadge = (role) => {
+    switch (role) {
+      case 'superadmin':
+        return {
+          label: 'SuperAdmin',
+          class: 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700/60',
+          icon: Crown,
+        };
+      case 'socio':
+        return {
+          label: 'Socio',
+          class: 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-300 dark:border-purple-700/60',
+          icon: ShieldCheck,
+        };
+      case 'comercial':
+        return {
+          label: 'Comercial',
+          class: 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700/60',
+          icon: UserIcon,
+        };
+      case 'media_buyer':
+        return {
+          label: 'Media Buyer',
+          class: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700/60',
+          icon: UserIcon,
+        };
+      default:
+        return {
+          label: role.toUpperCase(),
+          class: 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300 border-gray-300 dark:border-gray-700',
+          icon: UserIcon,
+        };
+    }
+  };
+
+  const roleInfo = getRoleBadge(userRole);
+  const RoleIcon = roleInfo.icon;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#2a1f1b] flex transition-colors duration-200">
@@ -201,24 +242,39 @@ export default function Layout() {
             <div className="relative pl-1" ref={userMenuRef}>
               <button 
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-700/60 transition-colors"
                 title={`${userName} (${userEmail})`}
               >
                 {userAvatar ? (
                   <img 
                     src={userAvatar} 
                     alt={userName} 
-                    className="w-8 h-8 rounded-full object-cover border border-gloss-pink/60 shadow-sm"
+                    className="w-8 h-8 rounded-full object-cover border border-gloss-pink/60 shadow-sm flex-shrink-0"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-gloss-burgundy/15 dark:bg-gloss-pink/20 flex items-center justify-center border border-gloss-burgundy/40 dark:border-gloss-pink/40 text-gloss-burgundy dark:text-gloss-pink font-bold text-xs">
+                  <div className="w-8 h-8 rounded-full bg-gloss-burgundy/15 dark:bg-gloss-pink/20 flex items-center justify-center border border-gloss-burgundy/40 dark:border-gloss-pink/40 text-gloss-burgundy dark:text-gloss-pink font-bold text-xs flex-shrink-0">
                     {userName.substring(0, 2).toUpperCase()}
                   </div>
                 )}
+                
+                <div className="hidden md:flex flex-col text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-gray-900 dark:text-white leading-tight truncate max-w-[120px]">
+                      {userName}
+                    </span>
+                    <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded border flex items-center gap-0.5 ${roleInfo.class}`}>
+                      <RoleIcon size={9} />
+                      {roleInfo.label}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-gray-400 truncate max-w-[140px]">
+                    {userEmail}
+                  </span>
+                </div>
               </button>
 
               {userDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gloss-black border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-scale-in">
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gloss-black border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl overflow-hidden z-50 animate-scale-in">
                   <div className="p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
                     <p className="text-xs font-bold text-gray-900 dark:text-white truncate">
                       {userName}
@@ -226,6 +282,12 @@ export default function Layout() {
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
                       {userEmail}
                     </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border inline-flex items-center gap-1 ${roleInfo.class}`}>
+                        <RoleIcon size={11} />
+                        Rol: {roleInfo.label}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="p-2 space-y-1">
@@ -234,10 +296,17 @@ export default function Layout() {
                         setUserDropdownOpen(false);
                         setConfigOpen(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
                     >
-                      <UserIcon size={15} className="text-gray-400" />
-                      <span>Perfil y Equipo</span>
+                      <div className="flex items-center gap-2.5">
+                        <UserIcon size={15} className="text-gray-400" />
+                        <span>Configuración y Equipo</span>
+                      </div>
+                      {isSuperAdmin && (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 px-1.5 py-0.5 rounded font-bold">
+                          Admin
+                        </span>
+                      )}
                     </button>
 
                     <button
