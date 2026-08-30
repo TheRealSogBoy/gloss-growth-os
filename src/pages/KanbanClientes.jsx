@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
+import { logAuditoria } from '../utils/audit';
 import { INITIAL_CATALOGO } from './Catalogo';
 import { 
   Building2, User, DollarSign, GripVertical, MapPin, 
@@ -84,6 +86,7 @@ const mapToRow = (form) => ({
 });
 
 export default function KanbanClientes() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   
   const [clientes, setClientes] = useState([]);
@@ -152,6 +155,7 @@ export default function KanbanClientes() {
           estado_contrato: leadForm.columna
         };
         const { data, error } = await supabase.from('clientes').insert([payload]).select();
+      if (!error && data) logAuditoria(user, 'Pipeline Comercial', 'CREAR', `Nuevo prospecto agregado: ${payload.negocio_nombre}`);
         if (error) {
           console.error('Error insertando cliente:', error);
           alert('Hubo un error al guardar: ' + error.message);

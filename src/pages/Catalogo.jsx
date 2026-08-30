@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useConfig } from '../context/ConfigContext';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
+import { logAuditoria } from '../utils/audit';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -366,6 +368,7 @@ async function generarPDF({ cliente, cart, terminos, total, agencia }) {
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Catalogo() {
+  const { user } = useAuth();
   const [servicios, setServicios]     = useState([]);
   const [loadingServicios, setLoadingServicios] = useState(true);
 

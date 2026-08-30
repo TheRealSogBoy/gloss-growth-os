@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
+import { logAuditoria } from '../utils/audit';
 import { 
   Search, Plus, X, Phone, Mail, Building2, MapPin, 
   Edit3, CheckCircle, Clock, AlertCircle, 
@@ -126,6 +128,7 @@ const mapToRow = (form) => ({
 });
 
 export default function Directorio() {
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -251,6 +254,7 @@ export default function Directorio() {
     if (window.confirm('¿Seguro que deseas eliminar a este cliente? Esta acción borrará sus datos permanentemente de Supabase.')) {
       try {
         await supabase.from('clientes').delete().eq('id', id);
+        logAuditoria(user, 'Directorio', 'ELIMINAR', `Cliente eliminado (ID: ${id})`);
         setClientes(prev => prev.filter(c => c.id !== id));
         if (selectedClient && selectedClient.id === id) {
           closeDrawer();
@@ -273,6 +277,7 @@ export default function Directorio() {
       
       if (isEditMode) {
         const { data, error } = await supabase.from('clientes').update(payload).eq('id', form.id).select();
+          if (!error && data) logAuditoria(user, 'Directorio', 'EDITAR', `Cliente actualizado: ${payload.negocio_nombre}`);
         if (error) throw error;
         if (data && data.length > 0) {
           const updated = mapToForm(data[0]);
@@ -281,6 +286,7 @@ export default function Directorio() {
         }
       } else {
         const { data, error } = await supabase.from('clientes').insert([payload]).select();
+          if (!error && data) logAuditoria(user, 'Directorio', 'CREAR', `Cliente agregado: ${payload.negocio_nombre}`);
         if (error) throw error;
         if (data && data.length > 0) {
           const inserted = mapToForm(data[0]);

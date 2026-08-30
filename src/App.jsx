@@ -1,6 +1,9 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ConfigProvider } from './context/ConfigContext';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './pages/Login';
 
 import Finanzas from './pages/Finanzas';
 import Directorio from './pages/Directorio';
@@ -15,10 +18,12 @@ const NotFound = () => <div className="p-6"><h1 className="text-3xl font-zodiak 
 
 function App() {
   return (
+    <AuthProvider>
     <ConfigProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Layout />}>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<ProtectedRoute />}><Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="directorio" element={<Directorio />} />
             <Route path="kanban-clientes" element={<KanbanClientes />} />
@@ -27,10 +32,11 @@ function App() {
             <Route path="finanzas" element={<Finanzas />} />
             <Route path="catalogo" element={<Catalogo />} />
             <Route path="*" element={<NotFound />} />
-          </Route>
+          </Route></Route>
         </Routes>
       </BrowserRouter>
     </ConfigProvider>
+    </AuthProvider>
   );
 }
 

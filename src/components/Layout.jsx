@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { LogOut } from 'lucide-react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -38,6 +40,8 @@ export default function Layout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
     if (darkMode) {

@@ -1,5 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
+import { logAuditoria } from '../utils/audit';
+import { Activity } from 'lucide-react';
 import { 
   Plus, Trash2, TrendingUp, TrendingDown, PiggyBank, Users, Wallet, 
   RefreshCw, Landmark, ArrowDownCircle, ArrowUpCircle, CreditCard, 
@@ -9,6 +12,9 @@ import {
 // === Constants Removed ===
 
 export default function Finanzas() {
+  const { user } = useAuth();
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
   // === ESTADOS (Listas de datos) ===
   
   
@@ -28,16 +34,19 @@ export default function Finanzas() {
       try {
         
           // Obtener de todas las tablas (retrocompatibilidad) y de transacciones_finanzas
-          const [ing, gas, gf, tdc, deu, ret, tf, cl] = await Promise.all([
+          const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
             supabase.from('finanzas_ingresos').select('*'),
             supabase.from('finanzas_gastos').select('*'),
             supabase.from('finanzas_gastos_fijos').select('*'),
             supabase.from('finanzas_compras_tdc').select('*'),
             supabase.from('finanzas_deudas').select('*'),
-            supabase.from('finanzas_retiros').select('*'),
-            supabase.from('transacciones_finanzas').select('*'),
-            supabase.from('clientes').select('*')
-          ]);
+                          supabase.from('finanzas_retiros').select('*'),
+              supabase.from('transacciones_finanzas').select('*'),
+              supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos'),
+              supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(20)
+            ]);
+            
+            if (audit && audit.data) setAuditLogs(audit.data);
           
           const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha });
           const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo });
@@ -215,7 +224,7 @@ export default function Finanzas() {
       } else {
         payload.metodo = formGasto.metodo;
         const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-        if (data && data.length > 0) setGastos([{ id: data[0].id, ...payload }, ...gastos]);
+        if (data && data.length > 0) { setGastos([{ id: data[0].id, ...payload }, ...gastos]); logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto: ${payload.concepto} - ${payload.monto}`); }
       }
     setModalGasto(false);
   };
@@ -225,7 +234,7 @@ export default function Finanzas() {
     const payload = { concepto: formFijo.concepto, categoria: formFijo.categoria, monto: Number(formFijo.monto), fecha_inicio: formFijo.fechaInicio, dia_cobro: formFijo.diaCobro };
     const { data } = await supabase.from('finanzas_gastos_fijos').insert([payload]).select();
     if (data && data.length > 0) {
-      setGastosFijos([...gastosFijos, { id: data[0].id, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]);
+      setGastosFijos([...gastosFijos, { id: data[0].id, concepto: payload.concepto, categoria: payload.categoria, monto: payload.monto, fechaInicio: payload.fecha_inicio, diaCobro: payload.dia_cobro }]); logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Fijo: ${payload.concepto} - ${payload.monto}`);
     }
     setModalFijo(false);
   };
@@ -276,7 +285,7 @@ export default function Finanzas() {
   // Funciones genéricas de borrado
   
   const deleteItem = async (tabla, setter, list, id) => {
-    await supabase.from(tabla).delete().eq('id', id);
+    await supabase.from(tabla).delete().eq('id', id); logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla}`);
     setter(list.filter(item => item.id !== id));
   };
 
