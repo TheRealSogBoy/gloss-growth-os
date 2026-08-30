@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, 
@@ -25,7 +26,7 @@ const initialEvents = [
   { id: 5, type: 'cobro', title: 'Renovación: Body & Soul', description: 'Pago de anualidad', date: '2026-09-10', amount: 3000000, origin: '/directorio', responsable: 'Finanzas', cliente: 'Body & Soul Center' },
 ];
 
-const CATEGORIAS = ['Todos', 'cobro', 'reunion', 'tarea', 'remarketing'];
+const CATEGORIAS = ['Todos', 'cobro', 'gasto', 'reunion', 'tarea', 'manual'];
 const VISTAS = ['Agenda', 'Día', 'Semana', 'Mes']; 
 
 const DEFAULT_MIEMBROS = ['Santiago', 'Davilson', 'Laura', 'Equipo Comercial', 'Equipo Ads', 'Finanzas'];
@@ -58,10 +59,14 @@ const getFirstDayOfMonth = (month, year) => new Date(year, month, 1).getDay();
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 export default function Calendario() {
+  const navigate = useNavigate();
   const { responsablesList } = useConfig();
   const miembrosEquipo = responsablesList?.length ? responsablesList : DEFAULT_MIEMBROS;
   
-  const [events, setEvents] = useState([]);
+  const [rawEventos, setRawEventos] = useState([]);
+  const [rawClientes, setRawClientes] = useState([]);
+  const [rawGastos, setRawGastos] = useState([]);
+  const [rawTareas, setRawTareas] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
 
   useEffect(() => {
@@ -70,13 +75,18 @@ export default function Calendario() {
 
   const fetchEvents = async () => {
     try {
-      const { data, error } = await supabase.from('eventos').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) {
-        setEvents(data);
-      }
+      const [evData, clData, gfData, trData] = await Promise.all([
+        supabase.from('eventos').select('*').order('created_at', { ascending: false }),
+        supabase.from('clientes').select('*'),
+        supabase.from('finanzas_gastos_fijos').select('*'),
+        supabase.from('tareas').select('*')
+      ]);
+      if (evData.data) setRawEventos(evData.data);
+      if (clData.data) setRawClientes(clData.data);
+      if (gfData.data) setRawGastos(gfData.data);
+      if (trData.data) setRawTareas(trData.data);
     } catch (e) {
-      console.error('Error fetching eventos:', e);
+      console.error('Error fetching calendar data:', e);
     } finally {
       setLoadingEvents(false);
     }
@@ -107,6 +117,98 @@ export default function Calendario() {
       setAñoActual(newYear);
     }
   };
+
+  const events = useMemo(() => {
+    const all = [];
+    
+    // 1. Manuales
+    rawEventos.forEach(ev => {
+        all.push({ ...ev, type: ev.type || 'manual' });
+    });
+
+    const yearStart = añoActual - 1;
+    const yearEnd = añoActual + 1;
+
+    // 2. Cobros de Clientes
+    rawClientes.forEach(cl => {
+        const plan = cl.plan_pagos || [];
+        const cuotasPendientes = plan.filter(p => p.estado === 'Pendiente');
+        const isActive = plan.length > 0 && cuotasPendientes.length === 0;
+        
+        if (isActive && cl.contrato_dia_corte) {
+            for (let y = yearStart; y <= yearEnd; y++) {
+                for (let m = 0; m < 12; m++) {
+                    const d = new Date(y, m, cl.contrato_dia_corte);
+                    if (d.getMonth() === m) {
+                        all.push({
+                            id: `cobro_${cl.id}_${y}_${m}`,
+                            type: 'cobro',
+                            title: `💰 Cobro: ${cl.negocio_nombre}`,
+                            description: `Monto: ${cl.contrato_valor}`,
+                            date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                            amount: cl.contrato_valor,
+                            origin: '/directorio',
+                            cliente: cl.negocio_nombre
+                        });
+                    }
+                }
+            }
+        }
+
+        // 3. Reuniones
+        const notas = cl.notas_kanban || {};
+        if (notas.fechaCita) {
+            all.push({
+                id: `cita_${cl.id}`,
+                type: 'reunion',
+                title: `📞 Reunión: ${cl.negocio_nombre}`,
+                description: notas.tipoCita || 'Cita',
+                date: notas.fechaCita,
+                origin: '/kanban-clientes',
+                cliente: cl.negocio_nombre
+            });
+        }
+    });
+
+    // 4. Gastos Fijos
+    rawGastos.forEach(gf => {
+        if (gf.dia_cobro) {
+            for (let y = yearStart; y <= yearEnd; y++) {
+                for (let m = 0; m < 12; m++) {
+                    const d = new Date(y, m, gf.dia_cobro);
+                    if (d.getMonth() === m) {
+                        all.push({
+                            id: `gf_${gf.id}_${y}_${m}`,
+                            type: 'gasto',
+                            title: `📉 Pago SaaS: ${gf.concepto}`,
+                            description: gf.categoria,
+                            date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                            amount: gf.monto,
+                            origin: '/finanzas'
+                        });
+                    }
+                }
+            }
+        }
+    });
+
+    // 5. Tareas Kanban
+    rawTareas.forEach(tr => {
+        if (tr.fecha_limite) {
+            all.push({
+                id: `tarea_${tr.id}`,
+                type: 'tarea',
+                title: `📋 Tarea: ${tr.titulo}`,
+                description: tr.descripcion || '',
+                date: tr.fecha_limite,
+                origin: '/kanban-tareas',
+                responsable: tr.responsable
+            });
+        }
+    });
+
+    return all;
+  }, [rawEventos, rawClientes, rawGastos, rawTareas, añoActual]);
 
   const filteredEvents = useMemo(() => {
     return events.filter(e => filtroTipo === 'Todos' || e.type === filtroTipo)
@@ -143,7 +245,7 @@ export default function Calendario() {
     try {
       const { data, error } = await supabase.from('eventos').insert([newEvent]).select();
       if (!error && data && data.length > 0) {
-        setEvents([...events, data[0]]);
+        setRawEventos([...rawEventos, data[0]]);
       }
     } catch(err) {}
     
@@ -154,9 +256,10 @@ export default function Calendario() {
   const getEventStyles = (type) => {
     switch(type) {
       case 'cobro': return { bg: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800', icon: DollarSign };
+      case 'gasto': return { bg: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800', icon: AlertCircle };
       case 'reunion': return { bg: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800', icon: Video };
-      case 'tarea': return { bg: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700', icon: CheckSquare };
-      case 'remarketing': return { bg: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800', icon: AlertCircle };
+      case 'tarea': return { bg: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800', icon: CheckSquare };
+      case 'manual': return { bg: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800', icon: CalendarIcon };
       default: return { bg: 'bg-gray-100 dark:bg-gray-800 text-gray-700', icon: CalendarIcon };
     }
   };
@@ -418,7 +521,7 @@ export default function Calendario() {
             <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-800">
               <a 
                 href={selectedEvent.origin} 
-                onClick={(e) => { e.preventDefault(); /* En prod usa navigate(origin) */ setSelectedEvent(null); }}
+                onClick={(e) => { e.preventDefault(); navigate(selectedEvent.origin); setSelectedEvent(null); }}
                 className="w-full flex items-center justify-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity shadow-md"
               >
                 Ir al Módulo Origen <ArrowUpRight size={18}/>
