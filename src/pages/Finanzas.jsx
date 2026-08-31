@@ -56,7 +56,7 @@ const formatTimestamp = (createdAt, fallbackDate) => {
 };
 
 export default function Finanzas() {
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const [auditLogs, setAuditLogs] = useState([]);
   const [showAudit, setShowAudit] = useState(false);
 
@@ -71,6 +71,7 @@ export default function Finanzas() {
 
   // === CONFIGURACIÓN DINÁMICA DE BÓVEDA ===
   const [porcentajeBoveda, setPorcentajeBoveda] = useState(15);
+  const [saldoBoveda, setSaldoBoveda] = useState(0);
   const [isEditingPct, setIsEditingPct] = useState(false);
   const [tempPct, setTempPct] = useState(15);
 
@@ -99,37 +100,31 @@ export default function Finanzas() {
   // === FETCH INICIAL DE DATOS CON ORDEN CRONOLÓGICO ESTRICTO ===
   const fetchData = useCallback(async () => {
     try {
-      // Cargar porcentaje de bóveda de localStorage o Supabase
-      const savedPct = localStorage.getItem('gloss_porcentaje_boveda');
-      if (savedPct) {
-        const parsed = Number(savedPct);
-        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
-          setPorcentajeBoveda(parsed);
-          setTempPct(parsed);
-        }
-      }
-
-      // Cargar transferencias de bóveda de localStorage
-      const savedTransf = localStorage.getItem('gloss_transferencias_boveda');
-      if (savedTransf) {
-        try {
-          setTransferenciasBoveda(JSON.parse(savedTransf));
-        } catch (e) {}
-      }
-
-      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
+      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit, configData, transfData] = await Promise.all([
         supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_compras_tdc').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_tdc').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
-        supabase.from('transacciones_finanzas').select('*').order('created_at', { ascending: false }),
-        supabase.from('clientes').select('id, negocio_nombre, contrato_valor, plan_pagos, historial_pagos, created_at').order('created_at', { ascending: false }),
-        supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(25)
+        supabase.from('tareas').select('*'),
+        supabase.from('clientes').select('*'),
+        supabase.from('historial_auditoria').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('finanzas_config').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('finanzas_transferencias_boveda').select('*').order('created_at', { ascending: false })
       ]);
 
       if (audit && audit.data) setAuditLogs(audit.data);
+
+      if (configData && configData.data) {
+        setPorcentajeBoveda(Number(configData.data.boveda_ahorro_porcentaje) || 15);
+        setTempPct(Number(configData.data.boveda_ahorro_porcentaje) || 15);
+        setSaldoBoveda(Number(configData.data.boveda_saldo_acumulado) || 0);
+      }
+      
+      if (transfData && transfData.data) {
+        setTransferenciasBoveda(transfData.data);
+      }
 
       const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at || r.fecha });
       const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo, created_at: r.created_at || r.fecha });
@@ -210,10 +205,7 @@ export default function Finanzas() {
     }
     setPorcentajeBoveda(val);
     setIsEditingPct(false);
-    localStorage.setItem('gloss_porcentaje_boveda', String(val));
-    try {
-      await supabase.from('finanzas_config').upsert([{ id: 'default', porcentaje_boveda: val }]);
-    } catch (e) {}
+    try { await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_ahorro_porcentaje: val }]); } catch (e) {}
     logAuditoria(user, 'Finanzas', 'EDITAR', `Porcentaje de Bóveda actualizado a ${val}%`);
   };
 
@@ -270,7 +262,7 @@ export default function Finanzas() {
     const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
 
     // Saldo Final Bóveda: Ahorro acumulado - gastos pagados con bóveda - transferencias a socios
-    const fBovedaTotal = fReinversion - gastosBoveda - tTransfBoveda;
+    const fBovedaTotal = saldoBoveda;
 
     // Saldo Socios: Ganancia base + transferencias de bóveda - retiros - gastos personales
     const sDavilson = gananciaSocio + transfDavilson - retirosDavilson - gastosDavilson;
@@ -385,11 +377,20 @@ export default function Finanzas() {
 
   const handleIngreso = async (e) => {
     e.preventDefault();
-    const payload = { concepto: formIngreso.concepto, cliente: formIngreso.cliente, tipo: formIngreso.tipo, monto: Number(formIngreso.monto), fecha: formIngreso.fecha };
+    const montoNum = Number(formIngreso.monto);
+    const payload = { concepto: formIngreso.concepto, cliente: formIngreso.cliente, tipo: formIngreso.tipo, monto: montoNum, fecha: formIngreso.fecha };
     const { data } = await supabase.from('finanzas_ingresos').insert([payload]).select();
     if (data && data.length > 0) {
       setIngresos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...ingresos]);
-      logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - $${payload.monto}`);
+      logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - ${montoNum}`);
+      
+      // Bóveda: Añadir Ahorro
+      const montoAhorro = montoNum * (porcentajeBoveda / 100);
+      const nuevoSaldo = saldoBoveda + montoAhorro;
+      try {
+        await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo, boveda_ahorro_porcentaje: porcentajeBoveda }]);
+        setSaldoBoveda(nuevoSaldo);
+      } catch (err) {}
       
       // VERCEL SERVERLESS TRIGGERS (COBRO)
         sendTelegramNotification(
@@ -497,29 +498,20 @@ export default function Finanzas() {
   const handleGastoBoveda = async (e) => {
     e.preventDefault();
     const montoNum = Number(formGastoBoveda.monto);
-    if (isNaN(montoNum) || montoNum <= 0) {
-      alert('Ingresa un monto válido para el gasto.');
-      return;
-    }
+    if (isNaN(montoNum) || montoNum <= 0) return;
 
-    const payload = {
-      concepto: formGastoBoveda.concepto,
-      categoria: formGastoBoveda.categoria,
-      monto: montoNum,
-      fecha: formGastoBoveda.fecha,
-      metodo: 'Bóveda de Agencia'
-    };
+    const payload = { concepto: formGastoBoveda.concepto, categoria: formGastoBoveda.categoria, monto: montoNum, fecha: formGastoBoveda.fecha, metodo: 'Bóveda de Agencia' };
+    const nuevoSaldo = saldoBoveda - montoNum;
 
-    const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-    if (data && data.length > 0) {
-      setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
-      logAuditoria(
-        user,
-        'Finanzas',
-        'CREAR',
-        `Gasto de Bóveda: ${payload.concepto} (${payload.categoria}) - $${payload.monto}`
-      );
-    }
+    try {
+      const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
+      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+      if (data && data.length > 0) {
+        setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
+        setSaldoBoveda(nuevoSaldo);
+        logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Bóveda: ${payload.concepto} - ${montoNum}`);
+      }
+    } catch(err) {}
 
     setModalBoveda(false);
     setFormGastoBoveda({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
@@ -547,6 +539,10 @@ export default function Finanzas() {
   };
 
   const deleteItem = async (tabla, setter, list, id) => {
+    if (!isSuperAdmin) {
+      alert("No tienes permisos de Super Admin para eliminar transacciones.");
+      return;
+    }
     await supabase.from(tabla).delete().eq('id', id);
     logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla}`);
     setter(list.filter(item => item.id !== id));
@@ -650,7 +646,7 @@ export default function Finanzas() {
                 ) : (
                   <div className="flex items-center gap-1 text-xs font-bold">
                     <span>{porcentajeBoveda}% Ahorro</span>
-                    <button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>
+                    {isSuperAdmin && (<button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>)}
                   </div>
                 )}
               </div>
@@ -848,7 +844,7 @@ export default function Finanzas() {
                   <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="p-3"><p className="font-medium">{c.concepto}</p><span className="text-xs text-gray-500">{c.fecha}</span></td>
                     <td className="p-3 font-medium text-red-500 text-right">-{formatCOP(c.monto)}</td>
-                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center"><button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -881,7 +877,7 @@ export default function Finanzas() {
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
                         <button onClick={() => pagarDeudaTercero(d)} title="Liquidar/Pagar" className="text-gray-400 hover:text-green-500"><CheckCircle size={18} /></button>
-                        <button onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                        <button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -922,7 +918,7 @@ export default function Finanzas() {
                       )}
                     </td>
                     <td className="p-3 font-bold text-gray-900 dark:text-white text-right">-{formatCOP(f.monto)}</td>
-                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center"><button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
                   </tr>
                 );
               })}
