@@ -110,7 +110,7 @@ export default function Finanzas() {
         supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_tdc').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_compras_tdc').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
         supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
         supabase.from('tareas').select('*'),
@@ -566,26 +566,37 @@ export default function Finanzas() {
       alert('Ingresa un monto válido para transferir.');
       return;
     }
+    if (montoNum > saldoBoveda) {
+      alert('El monto a transferir supera el saldo disponible en la Bóveda.');
+      return;
+    }
 
-    const newTransf = {
-      id: Date.now().toString(),
-      socio: formTransfBoveda.socio,
+    const payload = {
+      tipo: 'transferencia',
+      concepto: formTransfBoveda.motivo || `Transferencia Bóveda → ${formTransfBoveda.socio}`,
       monto: montoNum,
-      motivo: formTransfBoveda.motivo || `Transferencia Bóveda → ${formTransfBoveda.socio}`,
-      fecha: new Date().toISOString().split('T')[0],
-      created_at: new Date().toISOString()
+      destino: formTransfBoveda.socio,
+      socio: formTransfBoveda.socio
     };
 
-    const updated = [newTransf, ...transferenciasBoveda];
-    setTransferenciasBoveda(updated);
-    localStorage.setItem('gloss_transferencias_boveda', JSON.stringify(updated));
+    const nuevoSaldo = saldoBoveda - montoNum;
 
-    logAuditoria(
-      user,
-      'Finanzas',
-      'CREAR',
-      `Transferencia desde Bóveda a ${formTransfBoveda.socio} por $${montoNum}`
-    );
+    try {
+      const { data } = await supabase.from('finanzas_transferencias_boveda').insert([payload]).select();
+      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+      if (data && data.length > 0) {
+        setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
+        setSaldoBoveda(nuevoSaldo);
+      }
+      logAuditoria(
+        user,
+        'Finanzas',
+        'CREAR',
+        `Transferencia desde Bóveda a ${formTransfBoveda.socio} por ${montoNum}`
+      );
+    } catch (err) {
+      console.error('Error transfer de boveda:', err);
+    }
 
     setModalBoveda(false);
     setFormTransfBoveda({ socio: 'Davilson', monto: '', motivo: 'Transferencia de ahorro Bóveda' });
@@ -614,10 +625,22 @@ export default function Finanzas() {
     setFormGastoBoveda({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
   };
 
-  const pagarDeudaTercero = (deuda) => {
+  const pagarDeudaTercero = async (deuda) => {
     const nowIso = new Date().toISOString();
-    setGastos([{ id: Date.now(), concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Impuestos', monto: deuda.monto, fecha: nowIso.split('T')[0], created_at: nowIso }, ...gastos]);
-    setDeudasPendientes(deudasPendientes.filter(d => d.id !== deuda.id));
+    const dateStr = nowIso.split('T')[0];
+    const payload = { concepto: `Pago Deuda: ${deuda.concepto}`, categoria: 'Impuestos', monto: deuda.monto, fecha: dateStr, metodo: 'Caja General' };
+    
+    try {
+      const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
+      await supabase.from('finanzas_deudas').delete().eq('id', deuda.id);
+      if (data && data.length > 0) {
+        setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
+      }
+      setDeudasPendientes(deudasPendientes.filter(d => d.id !== deuda.id));
+      logAuditoria(user, 'Finanzas', 'EDITAR', `Deuda liquidada: ${deuda.concepto} - ${deuda.monto}`);
+    } catch (err) {
+      console.error('Error liquidando deuda:', err);
+    }
   };
 
   const pagarTarjetaCompleta = async () => {
