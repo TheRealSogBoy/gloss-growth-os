@@ -688,6 +688,73 @@ export default function Finanzas() {
         >
           <Wallet size={15} /> Registrar Retiro / Anticipo
         </button>
+
+      {/* Modal Inyectar Fondos (Bóveda) */}
+      {modalInyectar && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <h3 className="text-xl font-zodiak font-bold mb-4 text-green-600">+ Inyectar Fondos a Bóveda</h3>
+            <form onSubmit={handleInyectar} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label>
+                <input required type="number" min="1" value={formInyectar.monto} onChange={e=>setFormInyectar({...formInyectar, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg text-green-600" placeholder="0"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Motivo / Origen</label>
+                <select value={formInyectar.motivo} onChange={e=>setFormInyectar({...formInyectar, motivo: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer">
+                  <option>Aporte de Capital Propio</option>
+                  <option>Pago / Devolución de Deuda</option>
+                  <option>Ajuste de Caja / Rendimientos</option>
+                  <option>Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Notas / Detalle (Opcional)</label>
+                <input type="text" value={formInyectar.notas} onChange={e=>setFormInyectar({...formInyectar, notas: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Pago de tarjeta Davivienda..."/>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={()=>setModalInyectar(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-bold text-xs">Confirmar Depósito</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Distribuir Fondos (Caja General) */}
+      {modalDistribuir && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <h3 className="text-xl font-zodiak font-bold mb-1">Distribuir Caja General</h3>
+            <p className="text-xs text-gray-500 mb-4">Disponible: <strong className="text-gloss-burgundy dark:text-gloss-pink">{formatCOP(cajaDisponible || 0)}</strong></p>
+            <form onSubmit={handleDistribuir} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Bóveda (Ahorro)</label>
+                <input type="number" min="0" value={formDistribuir.boveda} onChange={e=>setFormDistribuir({...formDistribuir, boveda: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Fondo Operación</label>
+                <input type="number" min="0" value={formDistribuir.operacion} onChange={e=>setFormDistribuir({...formDistribuir, operacion: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Davilson</label>
+                  <input type="number" min="0" value={formDistribuir.davilson} onChange={e=>setFormDistribuir({...formDistribuir, davilson: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Santiago</label>
+                  <input type="number" min="0" value={formDistribuir.santiago} onChange={e=>setFormDistribuir({...formDistribuir, santiago: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={()=>setModalDistribuir(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Confirmar Distribución</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       </div>
     );
   };
@@ -1381,6 +1448,73 @@ export default function Finanzas() {
           </div>
         </div>
       )}
+
+      {/* Modal Inyectar Fondos (Bóveda) */}
+      {modalInyectar && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <h3 className="text-xl font-zodiak font-bold mb-4 text-green-600">+ Inyectar Fondos a Bóveda</h3>
+            <form onSubmit={handleInyectar} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label>
+                <input required type="number" min="1" value={formInyectar.monto} onChange={e=>setFormInyectar({...formInyectar, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg text-green-600" placeholder="0"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Motivo / Origen</label>
+                <select value={formInyectar.motivo} onChange={e=>setFormInyectar({...formInyectar, motivo: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer">
+                  <option>Aporte de Capital Propio</option>
+                  <option>Pago / Devolución de Deuda</option>
+                  <option>Ajuste de Caja / Rendimientos</option>
+                  <option>Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Notas / Detalle (Opcional)</label>
+                <input type="text" value={formInyectar.notas} onChange={e=>setFormInyectar({...formInyectar, notas: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Pago de tarjeta Davivienda..."/>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={()=>setModalInyectar(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-bold text-xs">Confirmar Depósito</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Distribuir Fondos (Caja General) */}
+      {modalDistribuir && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <h3 className="text-xl font-zodiak font-bold mb-1">Distribuir Caja General</h3>
+            <p className="text-xs text-gray-500 mb-4">Disponible: <strong className="text-gloss-burgundy dark:text-gloss-pink">{formatCOP(cajaDisponible || 0)}</strong></p>
+            <form onSubmit={handleDistribuir} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Bóveda (Ahorro)</label>
+                <input type="number" min="0" value={formDistribuir.boveda} onChange={e=>setFormDistribuir({...formDistribuir, boveda: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Fondo Operación</label>
+                <input type="number" min="0" value={formDistribuir.operacion} onChange={e=>setFormDistribuir({...formDistribuir, operacion: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Davilson</label>
+                  <input type="number" min="0" value={formDistribuir.davilson} onChange={e=>setFormDistribuir({...formDistribuir, davilson: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Santiago</label>
+                  <input type="number" min="0" value={formDistribuir.santiago} onChange={e=>setFormDistribuir({...formDistribuir, santiago: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={()=>setModalDistribuir(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Confirmar Distribución</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
 
     </div>
   );
