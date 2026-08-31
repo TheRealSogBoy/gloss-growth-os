@@ -393,9 +393,21 @@ export default function Finanzas() {
       
       // VERCEL SERVERLESS TRIGGERS (COBRO)
         sendTelegramNotification(
-          `💰 <b>NUEVO INGRESO REGISTRADO</b>\n\n<b>Concepto:</b> ${payload.concepto}\n<b>Monto:</b> ${payload.monto}\n<b>Origen:</b> ${payload.origen}`,
+          `💰 <b>NUEVO INGRESO REGISTRADO</b>\n\n<b>Concepto:</b> ${payload.concepto}\n<b>Cliente:</b> ${payload.cliente}\n<b>Tipo:</b> ${payload.tipo}\n<b>Monto:</b> ${Number(payload.monto).toLocaleString('es-CO')}\n<b>Fecha:</b> ${payload.fecha}`,
           'group'
         );
+
+        // CALENDAR: crear recordatorio si hay fecha futura de cobro
+        if (payload.fecha) {
+          const fechaISO = new Date(payload.fecha + 'T08:00:00').toISOString();
+          const endISO = new Date(payload.fecha + 'T09:00:00').toISOString();
+          createCalendarEvent({
+            title: `💰 Cobro: ${payload.concepto} - ${payload.cliente}`,
+            description: `Monto: ${Number(payload.monto).toLocaleString('es-CO')} | Tipo: ${payload.tipo}`,
+            startDateTime: fechaISO,
+            endDateTime: endISO,
+          });
+        }
     }
     setModalIngreso(false);
   };

@@ -207,21 +207,19 @@ export default function KanbanTareas() {
         logAuditoria(user, 'Kanban Tareas', 'CREAR', `Nueva tarea creada: ${nuevaTarea.titulo}`);
         
         // VERCEL SERVERLESS TRIGGERS (TAREA)
-          const startDate = new Date().toISOString();
-          const endDate = nuevaTarea.fechaLimite ? new Date(nuevaTarea.fechaLimite).toISOString() : new Date().toISOString();
-          
-          createCalendarEvent({
-            title: `Tarea: ${nuevaTarea.titulo}`,
-            description: nuevaTarea.descripcion || '',
-            startDateTime: startDate,
-            endDateTime: endDate
-          });
+            if (nuevaTarea.fechaLimite) {
+              createCalendarEvent({
+                title: `Tarea: ${nuevaTarea.titulo}`,
+                description: nuevaTarea.descripcion || '',
+                startDateTime: new Date(nuevaTarea.fechaLimite).toISOString(),
+                endDateTime: new Date(new Date(nuevaTarea.fechaLimite).getTime() + 60 * 60 * 1000).toISOString(),
+              });
+            }
 
-          sendTelegramNotification(
-            `📋 <b>NUEVA TAREA ASIGNADA</b>\n\n<b>Tarea:</b> ${nuevaTarea.titulo}\n<b>Límite:</b> ${nuevaTarea.fechaLimite || 'Sin límite'}\n<b>Asignado a:</b> ${nuevaTarea.responsable}`,
-            'group'
-          );
-      }
+            sendTelegramNotification(
+              `📋 <b>NUEVA TAREA CREADA</b>\n\n<b>Tarea:</b> ${nuevaTarea.titulo}\n<b>Límite:</b> ${nuevaTarea.fechaLimite ? new Date(nuevaTarea.fechaLimite).toLocaleDateString('es-CO') : 'Sin límite'}\n<b>Asignado a:</b> ${nuevaTarea.responsable}\n<b>Prioridad:</b> ${nuevaTarea.prioridad || 'Normal'}`,
+              'group'
+            ); }
     } catch (err) {
       console.error('Error insertando nueva tarea:', err);
     }

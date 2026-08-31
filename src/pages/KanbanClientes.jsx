@@ -176,7 +176,10 @@ export default function KanbanClientes() {
       if (data && data.length > 0) {
         setClientes([mapToKanbanForm(data[0]), ...clientes]);
         logAuditoria(user, 'Pipeline Comercial', 'CREAR', `Nuevo prospecto agregado: ${payload.negocio_nombre}`);
-        setShowLeadModal(false);
+          // TELEGRAM: nuevo prospecto
+          sendTelegramNotification(`🏥 <b>NUEVO PROSPECTO REGISTRADO</b>\n\n<b>Clínica:</b> ${payload.negocio_nombre}\n<b>Contacto:</b> ${leadForm.nombre_contacto || 'N/A'}\n<b>Interés:</b> ${(leadForm.interes || []).join(', ') || 'N/A'}\n<b>Etapa:</b> ${leadForm.columna}`, 'group');
+          if (leadForm.fecha_accion) { const ai = new Date(leadForm.fecha_accion).toISOString(); createCalendarEvent({ title: `Acción: ${payload.negocio_nombre}`, startDateTime: ai, endDateTime: new Date(new Date(leadForm.fecha_accion).getTime() + 3600000).toISOString() }); }
+          setShowLeadModal(false);
         setLeadForm({ nombre_clinica: '', nombre_contacto: '', telefono: '', interes: [], valor: '', fecha_accion: '', columna: 'Prospecto', facebook: '', instagram: '', tiktok: '', sitio_web: '', google: '', direccion_cita: '' });
       }
     } catch (error) {
