@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const auth = new google.auth.JWT({
       email,
       key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/calendar.events'],
+      scopes: ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar'],
     });
 
     const calendar = google.calendar({ version: 'v3', auth });
