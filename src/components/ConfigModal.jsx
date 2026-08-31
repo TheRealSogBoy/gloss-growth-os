@@ -266,6 +266,19 @@ export default function ConfigModal({ isOpen, onClose }) {
     }
   };
 
+  
+  const handleClearHistorial = async () => {
+    if (window.confirm('¿ATENCIÓN: Estás a punto de VACIAR todo el historial de notificaciones. Esta acción no se puede deshacer. ¿Deseas continuar?')) {
+      try {
+        await supabase.from('notificaciones').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        setHistorialAnuncios([]);
+        alert('Historial de notificaciones vaciado con éxito.');
+      } catch (err) {
+        console.error('Error clearing announcements:', err);
+      }
+    }
+  };
+
   const handleDeleteAnuncio = async (id) => {
     if (window.confirm('¿Eliminar este anuncio del historial de notificaciones?')) {
       try {
@@ -698,10 +711,22 @@ export default function ConfigModal({ isOpen, onClose }) {
               </form>
 
               {/* Historial de Anuncios Publicados */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <Clock size={14} /> Historial de Anuncios Recientes
-                </h4>
+              
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock size={14} /> Historial de Anuncios Recientes
+                    </h4>
+                    {(isSuperAdmin ?? false) && (
+                      <button 
+                        onClick={handleClearHistorial}
+                        className="text-[10px] bg-red-50 dark:bg-red-900/20 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/40 px-2 py-1 rounded font-bold transition-colors"
+                      >
+                        Vaciar Historial
+                      </button>
+                    )}
+                  </div>
+
                 <div className="border border-gray-200 dark:border-gray-800 rounded-2xl overflow-hidden bg-white dark:bg-gloss-black divide-y divide-gray-100 dark:divide-gray-800 max-h-56 overflow-y-auto custom-scrollbar">
                   {loadingAnuncios ? (
                     <div className="p-6 text-center text-gray-400 text-xs">Cargando historial...</div>
