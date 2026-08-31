@@ -1,0 +1,23 @@
+{
+  "short_name": "Gloss Growth",
+  "name": "Gloss Growth OS",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#8A152B",
+  "theme_color": "#8A152B",
+  "display": "standalone",
+  "orientation": "portrait"
+}
