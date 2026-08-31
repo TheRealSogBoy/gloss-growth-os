@@ -205,7 +205,20 @@ export default function Finanzas() {
     }
     setPorcentajeBoveda(val);
     setIsEditingPct(false);
-    try { await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_ahorro_porcentaje: val }]); } catch (e) {}
+    try { 
+      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_ahorro_porcentaje: val }]); 
+      
+      const newLog = {
+        tipo: 'ajuste_porcentaje',
+        concepto: `Ajuste de Porcentaje de Bóveda: Cambiado a ${val}%. Aplicable a ingresos a partir de esta fecha/hora.`,
+        monto: 0,
+        destino: user?.email || 'Admin'
+      };
+      const { data } = await supabase.from('finanzas_transferencias_boveda').insert([newLog]).select();
+      if (data && data.length > 0) {
+        setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
+      }
+    } catch (e) {}
     logAuditoria(user, 'Finanzas', 'EDITAR', `Porcentaje de Bóveda actualizado a ${val}%`);
   };
 
@@ -592,6 +605,8 @@ export default function Finanzas() {
     );
   };
 
+  const ultimoAjuste = transferenciasBoveda.find(t => t.tipo === 'ajuste_porcentaje');
+
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* HEADER */}
@@ -648,11 +663,17 @@ export default function Finanzas() {
                     <span>{porcentajeBoveda}% Ahorro</span>
                     {isSuperAdmin && (<button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>)}
                   </div>
-                )}
+                  )}
+                  {ultimoAjuste && (
+                    <p className="text-[10px] text-white/70 mt-3 italic leading-tight border-t border-white/20 pt-2">
+                      Vigente desde: {new Date(ultimoAjuste.created_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}<br/>
+                      <span className="opacity-80">Los ingresos anteriores conservan su corte original.</span>
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-
-            <div className="mt-4">
+  
+              <div className="mt-4">
               <p className="text-white/80 text-xs mb-1">Saldo Total Protegido en Bóveda</p>
               <h2 className="text-4xl font-bold font-zodiak">{formatCOP(fondoTotalBoveda)}</h2>
             </div>
