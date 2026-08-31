@@ -162,6 +162,7 @@ export default function KanbanTareas() {
       const { error } = await supabase.from('tareas').update({ estado: nuevaColumna }).eq('id', id);
       if (!error) {
         logAuditoria(user, 'Kanban Tareas', 'EDITAR', `Tarea movida a columna: ${nuevaColumna}`);
+        alert(`Tarea movida con éxito a '${nuevaColumna}'`);
       }
     } catch (err) {
       console.error('Error actualizando estado:', err);
