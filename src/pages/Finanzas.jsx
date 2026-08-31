@@ -224,6 +224,22 @@ export default function Finanzas() {
       if (data && data.length > 0) {
         setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
       }
+
+      try {
+        await supabase.from('notificaciones').insert([{
+          titulo: 'Ajuste de Configuración Financiera',
+          detalle: `El porcentaje de ahorro para la bóveda se cambió a ${val}%.`,
+          prioridad: 'baja',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `⚙️ <b>AJUSTE DE CONFIGURACIÓN FINANCIERA:</b>\n\n<b>Parámetro:</b> Porcentaje de Ahorro Bóveda\n<b>Nuevo Valor:</b> ${val}%\n<b>Actualizado por:</b> ${user?.email || 'Admin'}`,
+          'group'
+        );
+      } catch (err) {
+        console.error('Error enviando notificación de configuración:', err);
+      }
     } catch (e) {}
     logAuditoria(user, 'Finanzas', 'EDITAR', `Porcentaje de Bóveda actualizado a ${val}%`);
   };
@@ -430,6 +446,22 @@ export default function Finanzas() {
         setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
       }
       
+      try {
+        await supabase.from('notificaciones').insert([{
+          titulo: 'Inyección a Bóveda',
+          detalle: `${conceptoFinal} - ${formatCOP(m)}`,
+          prioridad: 'media',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `🏦 <b>INYECCIÓN A BÓVEDA:</b>\n\n<b>Monto:</b> ${formatCOP(m)}\n<b>Motivo:</b> ${conceptoFinal}\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
+          'group'
+        );
+      } catch (err) {
+        console.error('Error enviando notificación de inyección:', err);
+      }
+
       logAuditoria(user, 'Finanzas', 'CREAR', `Inyección a Bóveda: ${conceptoFinal} - ${m}`);
       alert('Fondos inyectados a la bóveda con éxito.');
     } catch (err) {
@@ -468,6 +500,28 @@ export default function Finanzas() {
         setTransferenciasBoveda([...data, ...transferenciasBoveda]);
       }
       
+      try {
+        let detalleText = '';
+        if (mBoveda > 0) detalleText += `Bóveda: ${formatCOP(mBoveda)}\n`;
+        if (mOperacion > 0) detalleText += `Fondo Operación: ${formatCOP(mOperacion)}\n`;
+        if (mDavilson > 0) detalleText += `Davilson: ${formatCOP(mDavilson)}\n`;
+        if (mSantiago > 0) detalleText += `Santiago: ${formatCOP(mSantiago)}\n`;
+
+        await supabase.from('notificaciones').insert([{
+          titulo: 'Distribución de Caja General',
+          detalle: `Se distribuyeron ${formatCOP(suma)}:\n${detalleText}`,
+          prioridad: 'media',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `📊 <b>DISTRIBUCIÓN DE CAJA GENERAL:</b>\n\n<b>Monto Total:</b> ${formatCOP(suma)}\n\n<b>Detalle:</b>\n${detalleText}\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
+          'group'
+        );
+      } catch (err) {
+        console.error('Error enviando notificación de distribución:', err);
+      }
+
       logAuditoria(user, 'Finanzas', 'CREAR', `Distribución manual de Caja General: ${suma}`);
       alert('Distribución realizada con éxito.');
     } catch (err) {
@@ -487,25 +541,33 @@ export default function Finanzas() {
       setIngresos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...ingresos]);
       logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - ${montoNum}`);
       
-      // Bóveda: Añadir Ahorro automático removido (nuevo modelo manual).
-      
-      // VERCEL SERVERLESS TRIGGERS (COBRO)
-        sendTelegramNotification(
-          `💰 <b>NUEVO INGRESO REGISTRADO</b>\n\n<b>Concepto:</b> ${payload.concepto}\n<b>Cliente:</b> ${payload.cliente}\n<b>Tipo:</b> ${payload.tipo}\n<b>Monto:</b> ${Number(payload.monto).toLocaleString('es-CO')}\n<b>Fecha:</b> ${payload.fecha}`,
+      try {
+        await supabase.from('notificaciones').insert([{
+          titulo: 'Nuevo Ingreso Registrado',
+          detalle: `${payload.concepto} - ${formatCOP(montoNum)} (${payload.cliente || 'General'})`,
+          prioridad: 'alta',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `💰 <b>NUEVO INGRESO REGISTRADO:</b>\n\n<b>Monto:</b> ${formatCOP(montoNum)}\n<b>Concepto:</b> ${payload.concepto}\n<b>Cliente/Origen:</b> ${payload.cliente || 'General'}\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
           'group'
         );
+      } catch (err) {
+        console.error('Error enviando notificación de ingreso:', err);
+      }
 
-        // CALENDAR: crear recordatorio si hay fecha futura de cobro
-        if (payload.fecha) {
-          const fechaISO = new Date(payload.fecha + 'T08:00:00').toISOString();
-          const endISO = new Date(payload.fecha + 'T09:00:00').toISOString();
-          createCalendarEvent({
-            title: `💰 Cobro: ${payload.concepto} - ${payload.cliente}`,
-            description: `Monto: ${Number(payload.monto).toLocaleString('es-CO')} | Tipo: ${payload.tipo}`,
-            startDateTime: fechaISO,
-            endDateTime: endISO,
-          });
-        }
+      // CALENDAR: crear recordatorio si hay fecha futura de cobro
+      if (payload.fecha) {
+        const fechaISO = new Date(payload.fecha + 'T08:00:00').toISOString();
+        const endISO = new Date(payload.fecha + 'T09:00:00').toISOString();
+        createCalendarEvent({
+          title: `💰 Cobro: ${payload.concepto} - ${payload.cliente}`,
+          description: `Monto: ${Number(payload.monto).toLocaleString('es-CO')} | Tipo: ${payload.tipo}`,
+          startDateTime: fechaISO,
+          endDateTime: endISO,
+        });
+      }
     }
     setModalIngreso(false);
   };
@@ -513,15 +575,40 @@ export default function Finanzas() {
   const handleGasto = async (e) => {
     e.preventDefault();
     const payload = { concepto: formGasto.concepto, categoria: formGasto.categoria, monto: Number(formGasto.monto), fecha: formGasto.fecha };
-    if (formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Crédito') {
+    const metodoPago = formGasto.metodo === 'Tarjeta de Crédito (TDC)' || formGasto.metodo === 'Tarjeta de Crédito' ? 'Tarjeta de Crédito' : formGasto.metodo;
+    let success = false;
+    
+    if (metodoPago === 'Tarjeta de Crédito') {
       const { data } = await supabase.from('finanzas_compras_tdc').insert([payload]).select();
-      if (data && data.length > 0) setComprasTDC([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...comprasTDC]);
+      if (data && data.length > 0) {
+        setComprasTDC([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...comprasTDC]);
+        success = true;
+      }
     } else {
       payload.metodo = formGasto.metodo;
       const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
       if (data && data.length > 0) {
         setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
         logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto (${payload.metodo}): ${payload.concepto} - $${payload.monto}`);
+        success = true;
+      }
+    }
+
+    if (success) {
+      try {
+        await supabase.from('notificaciones').insert([{
+          titulo: 'Nuevo Gasto Registrado',
+          detalle: `${payload.concepto} - ${formatCOP(payload.monto)} (${metodoPago})`,
+          prioridad: 'media',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `💸 <b>NUEVO GASTO REGISTRADO:</b>\n\n<b>Monto:</b> ${formatCOP(payload.monto)}\n<b>Concepto:</b> ${payload.concepto}\n<b>Categoría:</b> ${payload.categoria}\n<b>Método/Origen:</b> ${metodoPago}\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
+          'group'
+        );
+      } catch (err) {
+        console.error('Error enviando notificación de gasto:', err);
       }
     }
     setModalGasto(false);
@@ -618,6 +705,22 @@ export default function Finanzas() {
         setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
         setSaldoBoveda(nuevoSaldo);
         logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Gasto Bóveda: ${payload.concepto} - ${montoNum}`);
+
+        try {
+          await supabase.from('notificaciones').insert([{
+            titulo: 'Nuevo Gasto desde Bóveda',
+            detalle: `${payload.concepto} - ${formatCOP(montoNum)} (Bóveda)`,
+            prioridad: 'media',
+            created_at: new Date().toISOString()
+          }]);
+
+          await sendTelegramNotification(
+            `💸 <b>NUEVO GASTO REGISTRADO:</b>\n\n<b>Monto:</b> ${formatCOP(montoNum)}\n<b>Concepto:</b> ${payload.concepto}\n<b>Categoría:</b> ${payload.categoria}\n<b>Método/Origen:</b> Bóveda de Agencia\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
+            'group'
+          );
+        } catch (err) {
+          console.error('Error enviando notificación de gasto de bóveda:', err);
+        }
       }
     } catch(err) {}
 
