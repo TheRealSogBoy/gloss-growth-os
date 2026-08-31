@@ -152,7 +152,22 @@ export default function KanbanTareas() {
     }
   };
 
-  // === ACTUALIZACIÓN EN TIEMPO REAL DEL MODAL Y SUPABASE ===
+  
+  const changeStatus = async (id, nuevaColumna) => {
+    setTareas(prev => prev.map(t => String(t.id) === String(id) ? { ...t, estado: nuevaColumna } : t));
+    if (selectedTarea && String(selectedTarea.id) === String(id)) {
+      setSelectedTarea(prev => ({ ...prev, estado: nuevaColumna }));
+    }
+    try {
+      const { error } = await supabase.from('tareas').update({ estado: nuevaColumna }).eq('id', id);
+      if (!error) {
+        logAuditoria(user, 'Kanban Tareas', 'EDITAR', `Tarea movida a columna: ${nuevaColumna}`);
+      }
+    } catch (err) {
+      console.error('Error actualizando estado:', err);
+    }
+  };
+// === ACTUALIZACIÓN EN TIEMPO REAL DEL MODAL Y SUPABASE ===
   const updateSelected = async (updates) => {
     const updatedTask = { ...selectedTarea, ...updates };
     setSelectedTarea(updatedTask);
@@ -309,6 +324,18 @@ export default function KanbanTareas() {
                             {t.responsable?.substring(0, 2).toUpperCase() || 'SA'}
                           </div>
                         </div>
+                          {/* Selector Rápido */}
+                          <div className="relative z-10 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                            <select 
+                              value={t.estado}
+                              onChange={(e) => changeStatus(t.id, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full text-[10px] sm:text-xs bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg sm:rounded-xl p-1.5 sm:p-2 text-gray-600 dark:text-gray-300 focus:ring-1 focus:ring-gloss-burgundy font-bold cursor-pointer"
+                            >
+                              {COLUMNAS.map(opt => <option key={opt} value={opt}>Mover a: {opt}</option>)}
+                            </select>
+                          </div>
+
                       </div>
                     );
                   })}
