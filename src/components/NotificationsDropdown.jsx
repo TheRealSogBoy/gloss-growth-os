@@ -17,6 +17,7 @@ import {
   Megaphone
 } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
+import { sendTelegramNotification } from '../lib/notifications';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
 
@@ -160,6 +161,13 @@ export default function NotificationsDropdown({ isOpen, onClose }) {
         alert('Error: ' + res.error);
       } else {
         logAuditoria(user, 'Notificaciones', 'CREAR', `Notificación emitida al equipo: ${formNotif.titulo}`);
+          try {
+            await sendTelegramNotification(
+              "📢 <b>COMUNICADO OFICIAL:</b>\n\n<b>Título:</b> " + formNotif.titulo.trim() + "\n<b>Mensaje:</b> " + formNotif.mensaje.trim() + "\n<b>Emitido por:</b> " + (user?.email || 'Super Admin'),
+              'group'
+            );
+          } catch(e) { console.error(e); }
+
         setFormNotif({ titulo: '', mensaje: '', enlace: '/' });
         setModalCreateOpen(false);
       }
