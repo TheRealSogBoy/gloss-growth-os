@@ -594,10 +594,7 @@ export default function Finanzas() {
               <Send size={15} /> Movimientos y Gastos de Bóveda
             </button>
 
-            <div className="pt-3 border-t border-white/20 flex justify-between items-center text-xs">
-              <span>+{formatCOP(fondoReinversionMes)} (Mes actual)</span>
-              <span className="px-2 py-0.5 bg-white/20 rounded font-bold">{porcentajeBoveda}% de Ingresos Brutos</span>
-            </div>
+            
           </div>
         </div>
 
