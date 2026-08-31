@@ -56,29 +56,215 @@ const formatTimestamp = (createdAt, fallbackDate) => {
 };
 
 export default function Finanzas() {
+  const { user, isSuperAdmin } = useAuth();
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [showAudit, setShowAudit] = useState(false);
+
+  // === ESTADOS DE DATOS ===
+  const [ingresos, setIngresos] = useState([]);
+  const [gastos, setGastos] = useState([]);
+  const [gastosFijos, setGastosFijos] = useState([]);
+  const [comprasTDC, setComprasTDC] = useState([]);
+  const [deudasPendientes, setDeudasPendientes] = useState([]);
+  const [retiros, setRetiros] = useState([]);
+  const [transferenciasBoveda, setTransferenciasBoveda] = useState([]);
+
+  // === CONFIGURACIÓN DINÁMICA DE BÓVEDA ===
+  const [porcentajeBoveda, setPorcentajeBoveda] = useState(15);
+  const [saldoBoveda, setSaldoBoveda] = useState(0);
+  const [isEditingPct, setIsEditingPct] = useState(false);
+  const [tempPct, setTempPct] = useState(15);
+
+  // === FILTRO LIBRO MAYOR ===
+  const [filtroLibro, setFiltroLibro] = useState('todos'); // 'todos' | 'ingresos' | 'gastos' | 'boveda_socios'
+  const [searchLibro, setSearchLibro] = useState('');
+
+  // === ESTADOS DE MODALES ===
+  const [modalIngreso, setModalIngreso] = useState(false);
+  const [modalGasto, setModalGasto] = useState(false);
+  const [modalFijo, setModalFijo] = useState(false);
+  const [modalDeuda, setModalDeuda] = useState(false);
+  const [modalRetiro, setModalRetiro] = useState(false);
+  const [modalBoveda, setModalBoveda] = useState(false);
+  const [tabBoveda, setTabBoveda] = useState('transferir'); // 'transferir' | 'gasto'
+
+  // === ESTADOS DE FORMULARIOS ===
+  const [formIngreso, setFormIngreso] = useState({ concepto: '', cliente: '', tipo: 'Retainer', monto: '', fecha: new Date().toISOString().split('T')[0] });
+  const [formGasto, setFormGasto] = useState({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Caja General' });
+  const [formFijo, setFormFijo] = useState({ concepto: '', categoria: 'SaaS', monto: '', fechaInicio: new Date().toISOString().split('T')[0], diaCobro: 1 });
+  const [formDeuda, setFormDeuda] = useState({ concepto: '', monto: '', fechaLimite: '' });
+  const [formRetiro, setFormRetiro] = useState({ socio: 'Davilson', monto: '' });
+  const [formTransfBoveda, setFormTransfBoveda] = useState({ socio: 'Davilson', monto: '', motivo: 'Transferencia de ahorro Bóveda' });
+  const [formGastoBoveda, setFormGastoBoveda] = useState({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
+
+  const [modalInyectar, setModalInyectar] = useState(false);
+  const [formInyectar, setFormInyectar] = useState({ monto: '', motivo: 'Aporte de Capital Propio', notas: '' });
+  const [modalDistribuir, setModalDistribuir] = useState(false);
+  const [formDistribuir, setFormDistribuir] = useState({ boveda: '', operacion: '', davilson: '', santiago: '' });
+
+
+  // === FETCH INICIAL DE DATOS CON ORDEN CRONOLÓGICO ESTRICTO ===
+  const fetchData = useCallback(async () => {
+    try {
+      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit, configData, transfData] = await Promise.all([
+        supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_tdc').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
+        supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
+        supabase.from('tareas').select('*'),
+        supabase.from('clientes').select('*'),
+        supabase.from('historial_auditoria').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('finanzas_config').select('*').eq('id', 'default').maybeSingle(),
+        supabase.from('finanzas_transferencias_boveda').select('*').order('created_at', { ascending: false })
+      ]);
+
+      if (audit && audit.data) setAuditLogs(audit.data);
+
+      if (configData && configData.data) {
+        setPorcentajeBoveda(Number(configData.data.boveda_ahorro_porcentaje) || 15);
+        setTempPct(Number(configData.data.boveda_ahorro_porcentaje) || 15);
+        setSaldoBoveda(Number(configData.data.boveda_saldo_acumulado) || 0);
+      }
+      
+      if (transfData && transfData.data) {
+        setTransferenciasBoveda(transfData.data);
+      }
+
+      const mapIng = (r) => ({ id: r.id, concepto: r.concepto, cliente: r.cliente, tipo: r.tipo, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at || r.fecha });
+      const mapGas = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, metodo: r.metodo, created_at: r.created_at || r.fecha });
+      const mapFij = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fechaInicio: r.fecha_inicio, diaCobro: r.dia_cobro, created_at: r.created_at });
+      const mapTdc = (r) => ({ id: r.id, concepto: r.concepto, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at });
+      const mapDeu = (r) => ({ id: r.id, concepto: r.concepto, monto: Number(r.monto), fechaLimite: r.fecha_limite, created_at: r.created_at });
+      const mapRet = (r) => ({ id: r.id, socio: r.socio, monto: Number(r.monto), fecha: r.fecha, created_at: r.created_at || r.fecha });
+      const mapTfIngreso = (r) => ({ id: r.id, cliente_id: r.cliente_id, concepto: r.descripcion || r.categoria, cliente: 'Directorio', tipo: 'Operativo', monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, created_at: r.created_at || r.fecha_pago });
+      const mapTfGasto = (r) => ({ id: r.id, concepto: r.descripcion || r.categoria, categoria: r.categoria, monto: Number(r.monto), fecha: r.fecha_pago || r.created_at, metodo: 'Transferencia', created_at: r.created_at || r.fecha_pago });
+
+      let fetchedIngresos = ing.data ? ing.data.map(mapIng) : [];
+      let fetchedGastos = gas.data ? gas.data.map(mapGas) : [];
+
+      if (tf.data) {
+        const tfIngresos = tf.data.filter(t => t.tipo === 'ingreso').map(mapTfIngreso);
+        const tfGastos = tf.data.filter(t => t.tipo === 'gasto').map(mapTfGasto);
+        fetchedIngresos = [...fetchedIngresos, ...tfIngresos];
+        fetchedGastos = [...fetchedGastos, ...tfGastos];
+      }
+
+      // Sincronización automática con clientes con pago activo
+      if (cl.data) {
+        cl.data.forEach(row => {
+          const planPagos = row.plan_pagos || [];
+          const cuotasPendientes = planPagos.filter(p => p.estado === 'Pendiente');
+          const isPagado100 = planPagos.length > 0 && cuotasPendientes.length === 0;
+
+          const hoy = new Date();
+          const mesActual = hoy.getMonth();
+          const añoActual = hoy.getFullYear();
+          const historialPagos = row.historial_pagos || [];
+          const haPagadoEsteMes = historialPagos.some(p => {
+            if (!p.fecha) return false;
+            const [year, month] = p.fecha.split('-');
+            return Number(month) - 1 === mesActual && Number(year) === añoActual;
+          });
+
+          if ((isPagado100 || haPagadoEsteMes) && row.contrato_valor) {
+            const hasTx = fetchedIngresos.some(i => i.cliente_id === row.id || (i.concepto && i.concepto.includes(row.negocio_nombre)));
+            if (!hasTx) {
+              fetchedIngresos.push({
+                id: 'virtual_' + row.id,
+                cliente_id: row.id,
+                concepto: `Cobro mensual - ${row.negocio_nombre || 'Cliente'}`,
+                cliente: 'Directorio (Sincronizado)',
+                tipo: 'Operativo',
+                monto: Number(row.contrato_valor) || 0,
+                fecha: new Date().toISOString().split('T')[0],
+                created_at: row.created_at || new Date().toISOString()
+              });
+            }
+          }
+        });
+      }
+
+      setIngresos(fetchedIngresos);
+      setGastos(fetchedGastos);
+      setGastosFijos(gf.data ? gf.data.map(mapFij) : []);
+      setComprasTDC(tdc.data ? tdc.data.map(mapTdc) : []);
+      setDeudasPendientes(deu.data ? deu.data.map(mapDeu) : []);
+      setRetiros(ret.data ? ret.data.map(mapRet) : []);
+
+    } catch (err) {
+      console.error('Error fetching finanzas', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // === GUARDAR PORCENTAJE DE BÓVEDA ===
+  const handleSavePorcentaje = async () => {
+    const val = Number(tempPct);
+    if (isNaN(val) || val < 0 || val > 100) {
+      alert('Por favor ingresa un porcentaje válido entre 0 y 100.');
+      return;
+    }
+    setPorcentajeBoveda(val);
+    setIsEditingPct(false);
+    try { 
+      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_ahorro_porcentaje: val }]); 
+      
+      const newLog = {
+        tipo: 'ajuste_porcentaje',
+        concepto: `Ajuste de Porcentaje de Bóveda: Cambiado a ${val}%. Aplicable a ingresos a partir de esta fecha/hora.`,
+        monto: 0,
+        destino: user?.email || 'Admin'
+      };
+      const { data } = await supabase.from('finanzas_transferencias_boveda').insert([newLog]).select();
+      if (data && data.length > 0) {
+        setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
+      }
+    } catch (e) {}
+    logAuditoria(user, 'Finanzas', 'EDITAR', `Porcentaje de Bóveda actualizado a ${val}%`);
+  };
+
+  // === HELPER: Días hasta cobro recurrente ===
+  const getDaysUntil = (diaCobro) => {
+    const today = new Date();
+    const currentDay = today.getDate();
+    let days = diaCobro - currentDay;
+    if (days < 0) {
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      days = (daysInMonth - currentDay) + Number(diaCobro);
+    }
+    return days;
+  };
+
+  // === MOTOR LÓGICO Y CÁLCULOS (useMemo) ===
+  
   const { 
     totalIngresos, totalGastosEfectivo, utilidadBrutaMes, 
     cajaDisponible, fondoTotalBoveda, 
     saldoDavilson, saldoSantiago,
     totalTDC
   } = useMemo(() => {
-    const tIngresos = ingresos.reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tIngresos = (ingresos || []).reduce((acc, curr) => acc + Number(curr.monto), 0);
     
     // Gastos que afectan caja general (Cuentas que no son Bóveda ni Socios)
-    const tGastosVar = gastos.filter(g => !['Bóveda de Agencia', 'Cuenta Davilson', 'Cuenta Santiago'].includes(g.metodo)).reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const tGastosFijos = gastosFijos.reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tGastosVar = (gastos || []).filter(g => !['Bóveda de Agencia', 'Cuenta Davilson', 'Cuenta Santiago'].includes(g.metodo)).reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tGastosFijos = (gastosFijos || []).reduce((acc, curr) => acc + Number(curr.monto), 0);
     const tGastosCaja = tGastosVar + tGastosFijos; 
     
     // Gastos pagados con fondos específicos
-    const gastosDavilson = gastos.filter(g => g.metodo === 'Cuenta Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const gastosSantiago = gastos.filter(g => g.metodo === 'Cuenta Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const gastosDavilson = (gastos || []).filter(g => g.metodo === 'Cuenta Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const gastosSantiago = (gastos || []).filter(g => g.metodo === 'Cuenta Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
 
     // Transferencias desde Bóveda a socios (modelo anterior)
-    const transfDavilson = transferenciasBoveda.filter(t => t.socio === 'Davilson' || (t.tipo === 'transferencia' && t.destino === 'Davilson')).reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const transfSantiago = transferenciasBoveda.filter(t => t.socio === 'Santiago' || (t.tipo === 'transferencia' && t.destino === 'Santiago')).reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const transfDavilson = (transferenciasBoveda || []).filter(t => t.socio === 'Davilson' || (t.tipo === 'transferencia' && t.destino === 'Davilson')).reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const transfSantiago = (transferenciasBoveda || []).filter(t => t.socio === 'Santiago' || (t.tipo === 'transferencia' && t.destino === 'Santiago')).reduce((acc, curr) => acc + Number(curr.monto), 0);
 
     // NUEVO: Distribuciones manuales desde Caja General
-    const distribucionesCaja = transferenciasBoveda.filter(t => t.tipo === 'distribucion_caja');
+    const distribucionesCaja = (transferenciasBoveda || []).filter(t => t.tipo === 'distribucion_caja');
     const distBoveda = distribucionesCaja.filter(d => d.destino === 'Bóveda').reduce((acc, curr) => acc + Number(curr.monto), 0);
     const distOperacion = distribucionesCaja.filter(d => d.destino === 'Fondo Operación').reduce((acc, curr) => acc + Number(curr.monto), 0);
     const distDavilson = distribucionesCaja.filter(d => d.destino === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
@@ -86,7 +272,7 @@ export default function Finanzas() {
     
     const tDistribuciones = distBoveda + distOperacion + distDavilson + distSantiago;
 
-    const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const tTDC = (comprasTDC || []).reduce((acc, curr) => acc + Number(curr.monto), 0);
 
     // Utilidad Bruta (Ingresos - Gastos operacionales de caja)
     const uBruta = tIngresos - tGastosCaja;
@@ -95,8 +281,8 @@ export default function Finanzas() {
     const cDisponible = uBruta - tDistribuciones;
 
     // Retiros Socios
-    const retirosDavilson = retiros.filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const retirosSantiago = retiros.filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const retirosDavilson = (retiros || []).filter(r => r.socio === 'Davilson').reduce((acc, curr) => acc + Number(curr.monto), 0);
+    const retirosSantiago = (retiros || []).filter(r => r.socio === 'Santiago').reduce((acc, curr) => acc + Number(curr.monto), 0);
 
     // Saldo Final Bóveda (ahora manual)
     const fBovedaTotal = saldoBoveda; // Ya viene del estado global
@@ -450,7 +636,7 @@ export default function Finanzas() {
   };
 
   const deleteItem = async (tabla, setter, list, id) => {
-    if (!isSuperAdmin) {
+    if (!(isSuperAdmin ?? false)) {
       alert("No tienes permisos de Super Admin para eliminar transacciones.");
       return;
     }
@@ -460,7 +646,10 @@ export default function Finanzas() {
   };
 
   // Formato Moneda
-  const formatCOP = (val) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val || 0);
+  const formatCOP = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return '$0';
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(val);
+  };
 
   // === COMPONENTE TARJETA DE SOCIO ===
   const SocioCard = ({ nombre, saldo }) => {
@@ -559,7 +748,7 @@ export default function Finanzas() {
                 ) : (
                   <div className="flex items-center gap-1 text-xs font-bold">
                     <span>{porcentajeBoveda}% Ahorro</span>
-                    {isSuperAdmin && (<button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>)}
+                    {(isSuperAdmin ?? false) && (<button onClick={() => setIsEditingPct(true)} className="p-0.5 hover:text-gloss-pink transition-colors" title="Editar porcentaje"><Pencil size={12} /></button>)}
                   </div>
                   )}
                   {ultimoAjuste && (
@@ -705,7 +894,7 @@ export default function Finanzas() {
                   </td>
                 </tr>
               ) : (
-                filteredLibroMayor.map((m) => (
+                (filteredLibroMayor || []).map((m) => (
                   <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors">
                     <td className="py-3 px-4 font-mono font-medium text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {formatTimestamp(m.created_at, m.fecha)}
@@ -769,11 +958,11 @@ export default function Finanzas() {
             <table className="w-full text-left text-sm min-w-[500px]">
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {comprasTDC.length === 0 && <tr><td className="p-6 text-center text-gray-500">No hay deudas en TDC</td></tr>}
-                {comprasTDC.map(c => (
+                {(comprasTDC || []).map(c => (
                   <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="p-3"><p className="font-medium">{c.concepto}</p><span className="text-xs text-gray-500">{c.fecha}</span></td>
                     <td className="p-3 font-medium text-red-500 text-right">-{formatCOP(c.monto)}</td>
-                    <td className="p-3 text-center"><button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -796,7 +985,7 @@ export default function Finanzas() {
             <table className="w-full text-left text-sm min-w-[500px]">
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {deudasPendientes.length === 0 && <tr><td className="p-6 text-center text-gray-500">Sin deudas a terceros</td></tr>}
-                {deudasPendientes.map(d => (
+                {(deudasPendientes || []).map(d => (
                   <tr key={d.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="p-3">
                       <p className="font-medium">{d.concepto}</p>
@@ -806,7 +995,7 @@ export default function Finanzas() {
                     <td className="p-3 text-center">
                       <div className="flex justify-center gap-2">
                         <button onClick={() => pagarDeudaTercero(d)} title="Liquidar/Pagar" className="text-gray-400 hover:text-green-500"><CheckCircle size={18} /></button>
-                        <button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button>
+                        <button onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -830,7 +1019,7 @@ export default function Finanzas() {
           <table className="w-full text-left text-sm min-w-[500px]">
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {gastosFijos.length === 0 && <tr><td className="p-6 text-center text-gray-400">No hay gastos fijos configurados</td></tr>}
-              {gastosFijos.map(f => {
+              {(gastosFijos || []).map(f => {
                 const days = getDaysUntil(f.diaCobro);
                 const alert = days <= 5;
                 return (
@@ -847,7 +1036,7 @@ export default function Finanzas() {
                       )}
                     </td>
                     <td className="p-3 font-bold text-gray-900 dark:text-white text-right">-{formatCOP(f.monto)}</td>
-                    <td className="p-3 text-center"><button className={!isSuperAdmin ? 'hidden' : ''} onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button></td>
                   </tr>
                 );
               })}
@@ -885,7 +1074,7 @@ export default function Finanzas() {
                 {auditLogs.length === 0 ? (
                   <tr><td colSpan="5" className="py-4 text-center text-gray-500">No hay registros recientes.</td></tr>
                 ) : (
-                  auditLogs.map(log => (
+                  (auditLogs || []).map(log => (
                     <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/30">
                       <td className="py-3 pr-4 text-gray-500 whitespace-nowrap">{new Date(log.created_at).toLocaleString()}</td>
                       <td className="py-3 pr-4 font-medium text-gray-900 dark:text-white">{log.usuario_nombre}</td>
