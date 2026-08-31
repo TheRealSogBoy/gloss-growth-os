@@ -1,39 +1,42 @@
 const fs = require('fs');
 let fj = fs.readFileSync('src/pages/Finanzas.jsx', 'utf-8');
 
-const targetStart = `const handleGastoBoveda = async (e) => {`;
-const targetEnd = `metodo: 'Transferencia' });
-  };`;
+const oldLibroBovedaRegex = /\/\/ 4\. Transferencias de Bóveda[\s\S]*?transferenciasBoveda\.forEach\(t => \{[\s\S]*?\}\);/m;
 
-const startIndex = fj.indexOf(targetStart);
-const endIndex = fj.indexOf(targetEnd, startIndex) + targetEnd.length;
+const newLibroBoveda = `// 4. Transferencias de Bóveda y Caja Manual
+    transferenciasBoveda.forEach(t => {
+      if (t.tipo === 'ajuste_porcentaje') return; // Ignorar logs administrativos
 
-if (startIndex !== -1 && fj.indexOf(targetEnd, startIndex) !== -1) {
-  const newHandleGastoBoveda = `const handleGastoBoveda = async (e) => {
-    e.preventDefault();
-    const montoNum = Number(formGastoBoveda.monto);
-    if (isNaN(montoNum) || montoNum <= 0) return;
+      const esDeposito = t.tipo === 'deposito_manual';
+      const label = esDeposito ? '[DEPÓSITO]' : '[RETIRO/DISTR]';
+      const conceptoFinal = t.concepto || t.motivo || '';
 
-    const payload = { concepto: formGastoBoveda.concepto, categoria: formGastoBoveda.categoria, monto: montoNum, fecha: formGastoBoveda.fecha, metodo: 'Bóveda de Agencia' };
-    const nuevoSaldo = saldoBoveda - montoNum;
+      list.push({
+        id: 'trb_' + t.id,
+        fecha: t.fecha || 'Reciente',
+        created_at: t.created_at || t.fecha,
+        tipo: t.tipo === 'distribucion_caja' ? 'Distr. Caja' : 'Mov. Bóveda',
+        categoria: 'Mov. Interno',
+        concepto: \`\${label} \${conceptoFinal}\`,
+        origenDestino: t.destino || t.socio || 'Bóveda',
+        monto: Number(t.monto),
+        esTransferencia: !esDeposito, // Red/Blue for withdrawal/distribution
+        esPositivo: esDeposito // Green for deposits
+      });
+    });`;
 
-    try {
-      const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
-      if (data && data.length > 0) {
-        setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
-        setSaldoBoveda(nuevoSaldo);
-        logAuditoria(user, 'Finanzas', 'CREAR', \`Nuevo Gasto Bóveda: \${payload.concepto} - $\${montoNum}\`);
-      }
-    } catch(err) {}
-
-    setModalBoveda(false);
-    setFormGastoBoveda({ concepto: '', categoria: CATEGORIAS_GASTOS[0], monto: '', fecha: new Date().toISOString().split('T')[0], metodo: 'Transferencia' });
-  };`;
-
-  fj = fj.slice(0, startIndex) + newHandleGastoBoveda + fj.slice(endIndex);
-  console.log('✅ Patched handleGastoBoveda successfully.');
+if (fj.match(oldLibroBovedaRegex)) {
+  fj = fj.replace(oldLibroBovedaRegex, newLibroBoveda);
   fs.writeFileSync('src/pages/Finanzas.jsx', fj, 'utf-8');
+  console.log('✅ Patched Libro Mayor for Bóveda/Caja history');
 } else {
-  console.log('❌ Could not find boundaries for handleGastoBoveda.');
+  // Relaxed regex for encoding issues
+  const relaxedLibroBovedaRegex = /\/\/ 4\. Transferencias de B[^:]*veda[\s\S]*?transferenciasBoveda\.forEach\(t => \{[\s\S]*?\}\);/m;
+  if (fj.match(relaxedLibroBovedaRegex)) {
+    fj = fj.replace(relaxedLibroBovedaRegex, newLibroBoveda);
+    fs.writeFileSync('src/pages/Finanzas.jsx', fj, 'utf-8');
+    console.log('✅ Patched Libro Mayor for Bóveda/Caja history with relaxed regex');
+  } else {
+    console.log('❌ Could not match Libro Mayor for Bóveda');
+  }
 }

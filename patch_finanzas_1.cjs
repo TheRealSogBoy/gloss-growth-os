@@ -2,107 +2,173 @@ const fs = require('fs');
 
 let fj = fs.readFileSync('src/pages/Finanzas.jsx', 'utf-8');
 
-// 1. Check isSuperAdmin
-if (!fj.includes('const { user, isSuperAdmin } = useAuth();')) {
-  fj = fj.replace(
-    /const { user } = useAuth\(\);/,
-    `const { user, isSuperAdmin } = useAuth();`
-  );
+// 1. STATE
+fj = fj.replace(
+  /const \[modalBoveda, setModalBoveda\] = useState\(false\);/,
+  `const [modalBoveda, setModalBoveda] = useState(false);
+  const [modalInyectar, setModalInyectar] = useState(false);
+  const [formInyectar, setFormInyectar] = useState({ monto: '', motivo: 'Aporte de Capital Propio', notas: '' });
+  const [modalDistribuir, setModalDistribuir] = useState(false);
+  const [formDistribuir, setFormDistribuir] = useState({ boveda: '', operacion: '', davilson: '', santiago: '' });`
+);
+
+// 2. handleIngreso Boveda block removal
+const bovedaAhorroRegex = /\/\/\s*Bóveda:\s*Añadir Ahorro[\s\S]*?\} catch \(err\) \{\}/;
+if (fj.match(bovedaAhorroRegex)) {
+  fj = fj.replace(bovedaAhorroRegex, `// Bóveda: Añadir Ahorro automático removido (nuevo modelo manual).`);
+} else {
+  // Try relaxed regex due to encoding
+  const relaxedBovedaRegex = /\/\/\s*B[^:]+:\s*A[^a-zA-Z]*adir Ahorro[\s\S]*?\} catch \(err\) \{\}/;
+  fj = fj.replace(relaxedBovedaRegex, `// Bóveda: Añadir Ahorro automático removido (nuevo modelo manual).`);
 }
 
-// 2. Add saldoBoveda state
-if (!fj.includes('const [saldoBoveda, setSaldoBoveda] = useState(0);')) {
-  fj = fj.replace(
-    /const \[porcentajeBoveda, setPorcentajeBoveda\] = useState\(15\);/,
-    `const [porcentajeBoveda, setPorcentajeBoveda] = useState(15);\n  const [saldoBoveda, setSaldoBoveda] = useState(0);`
-  );
-}
-
-// 3. Update fetchData
-const oldFetchData = `
-  const fetchData = useCallback(async () => {
+// 3. New Handlers
+const handlersCode = `
+  const handleInyectar = async (e) => {
+    e.preventDefault();
+    const m = Number(formInyectar.monto);
+    if (m <= 0) return;
+    
+    const conceptoFinal = \`\${formInyectar.motivo}\${formInyectar.notas ? ' - ' + formInyectar.notas : ''}\`;
+    const nuevoSaldo = saldoBoveda + m;
+    
     try {
-      // Cargar porcentaje de bveda de localStorage o Supabase
-      const savedPct = localStorage.getItem('gloss_porcentaje_boveda');
-      if (savedPct) {
-        const parsed = Number(savedPct);
-        if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
-          setPorcentajeBoveda(parsed);
-          setTempPct(parsed);
-        }
-      }
-
-      // Cargar transferencias de bveda de localStorage
-      const savedTransf = localStorage.getItem('gloss_transferencias_boveda');
-      if (savedTransf) {
-        try {
-          setTransferenciasBoveda(JSON.parse(savedTransf));
-        } catch (e) {}
-      }
-
-      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit] = await Promise.all([
-        supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_tdc').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
-        supabase.from('tareas').select('*'),
-        supabase.from('clientes').select('*'),
-        supabase.from('historial_auditoria').select('*').order('created_at', { ascending: false }).limit(50)
-      ]);
-
-      if (audit && audit.data) setAuditLogs(audit.data);
-`;
-
-const newFetchData = `
-  const fetchData = useCallback(async () => {
-    try {
-      const [ing, gas, gf, tdc, deu, ret, tf, cl, audit, configData, transfData] = await Promise.all([
-        supabase.from('finanzas_ingresos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_gastos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_gastos_fijos').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_tdc').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_deudas').select('*').order('created_at', { ascending: false }),
-        supabase.from('finanzas_retiros').select('*').order('created_at', { ascending: false }),
-        supabase.from('tareas').select('*'),
-        supabase.from('clientes').select('*'),
-        supabase.from('historial_auditoria').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('finanzas_config').select('*').eq('id', 'default').maybeSingle(),
-        supabase.from('finanzas_transferencias_boveda').select('*').order('created_at', { ascending: false })
-      ]);
-
-      if (audit && audit.data) setAuditLogs(audit.data);
-
-      if (configData && configData.data) {
-        setPorcentajeBoveda(Number(configData.data.boveda_ahorro_porcentaje) || 15);
-        setTempPct(Number(configData.data.boveda_ahorro_porcentaje) || 15);
-        setSaldoBoveda(Number(configData.data.boveda_saldo_acumulado) || 0);
+      await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+      setSaldoBoveda(nuevoSaldo);
+      
+      const newLog = {
+        tipo: 'deposito_manual',
+        concepto: conceptoFinal,
+        monto: m,
+        destino: 'Bóveda'
+      };
+      
+      const { data } = await supabase.from('finanzas_transferencias_boveda').insert([newLog]).select();
+      if (data && data.length > 0) {
+        setTransferenciasBoveda([data[0], ...transferenciasBoveda]);
       }
       
-      if (transfData && transfData.data) {
-        setTransferenciasBoveda(transfData.data);
+      logAuditoria(user, 'Finanzas', 'CREAR', \`Inyección a Bóveda: \${conceptoFinal} - \${m}\`);
+      alert('Fondos inyectados a la bóveda con éxito.');
+    } catch (err) {
+      alert('Error inyectando fondos: ' + err.message);
+    }
+    
+    setModalInyectar(false);
+    setFormInyectar({ monto: '', motivo: 'Aporte de Capital Propio', notas: '' });
+  };
+
+  const handleDistribuir = async (e) => {
+    e.preventDefault();
+    const mBoveda = Number(formDistribuir.boveda) || 0;
+    const mOperacion = Number(formDistribuir.operacion) || 0;
+    const mDavilson = Number(formDistribuir.davilson) || 0;
+    const mSantiago = Number(formDistribuir.santiago) || 0;
+    
+    const suma = mBoveda + mOperacion + mDavilson + mSantiago;
+    if (suma <= 0) return alert('Ingresa al menos un monto para distribuir.');
+    if (suma > cajaDisponible) return alert('La suma de las partes (' + formatCOP(suma) + ') supera el saldo de Caja General (' + formatCOP(cajaDisponible) + ').');
+    
+    try {
+      const logs = [];
+      if (mBoveda > 0) {
+        logs.push({ tipo: 'distribucion_caja', concepto: 'Distribución de Caja General', monto: mBoveda, destino: 'Bóveda' });
+        const nuevoSaldo = saldoBoveda + mBoveda;
+        await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+        setSaldoBoveda(nuevoSaldo);
       }
+      if (mOperacion > 0) logs.push({ tipo: 'distribucion_caja', concepto: 'Distribución de Caja General', monto: mOperacion, destino: 'Fondo Operación' });
+      if (mDavilson > 0) logs.push({ tipo: 'distribucion_caja', concepto: 'Distribución de Caja General', monto: mDavilson, destino: 'Davilson' });
+      if (mSantiago > 0) logs.push({ tipo: 'distribucion_caja', concepto: 'Distribución de Caja General', monto: mSantiago, destino: 'Santiago' });
+      
+      const { data } = await supabase.from('finanzas_transferencias_boveda').insert(logs).select();
+      if (data && data.length > 0) {
+        setTransferenciasBoveda([...data, ...transferenciasBoveda]);
+      }
+      
+      logAuditoria(user, 'Finanzas', 'CREAR', \`Distribución manual de Caja General: \${suma}\`);
+      alert('Distribución realizada con éxito.');
+    } catch (err) {
+      alert('Error distribuyendo fondos: ' + err.message);
+    }
+    
+    setModalDistribuir(false);
+    setFormDistribuir({ boveda: '', operacion: '', davilson: '', santiago: '' });
+  };
 `;
 
-// regex for old fetchData, it can be tricky due to CRLF, so we use replace with strings and remove spaces
-fj = fj.replace(/const fetchData = useCallback\(async \(\) => \{\s*try \{\s*\/\/ Cargar porcentaje[\s\S]*?if \(audit && audit\.data\) setAuditLogs\(audit\.data\);/, newFetchData.trim());
+fj = fj.replace(/const handleIngreso = async \(e\) => \{/, handlersCode + '\n  const handleIngreso = async (e) => {');
 
-// 4. Modificar handleSavePorcentaje
-fj = fj.replace(
-  /localStorage\.setItem\('gloss_porcentaje_boveda', String\(val\)\);\s*try \{\s*await supabase\.from\('finanzas_config'\)\.upsert\(\[\{ id: 'default', porcentaje_boveda: val \}\]\);\s*\} catch \(e\) \{\}/,
-  `try { await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_ahorro_porcentaje: val }]); } catch (e) {}`
-);
+// 4. Modals JSX
+const modalsJsx = `
+      {/* MODAL INYECTAR FONDOS */}
+      {modalInyectar && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-800 relative">
+            <button onClick={() => setModalInyectar(false)} className="absolute top-4 right-4 p-1.5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white">
+              <X size={18} />
+            </button>
+            <h3 className="font-zodiak font-bold text-xl text-gray-900 dark:text-white mb-4">+ Inyectar a Bóveda</h3>
+            <form onSubmit={handleInyectar} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Monto ($)</label>
+                <input required type="number" value={formInyectar.monto} onChange={e=>setFormInyectar({...formInyectar, monto: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy font-bold"/>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Motivo / Origen</label>
+                <select value={formInyectar.motivo} onChange={e=>setFormInyectar({...formInyectar, motivo: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                  <option>Aporte de Capital Propio</option>
+                  <option>Pago / Devolución de Deuda</option>
+                  <option>Ajuste de Caja / Rendimientos</option>
+                  <option>Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Notas / Detalle (Opcional)</label>
+                <input type="text" value={formInyectar.notas} onChange={e=>setFormInyectar({...formInyectar, notas: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900"/>
+              </div>
+              <button type="submit" className="w-full bg-gloss-burgundy text-white font-bold py-3 rounded-xl hover:opacity-90 shadow-lg">Confirmar Inyección</button>
+            </form>
+          </div>
+        </div>
+      )}
 
-// 5. Update deleteItem
-fj = fj.replace(
-  /const deleteItem = async \(tabla, setter, list, id\) => \{/,
-  `const deleteItem = async (tabla, setter, list, id) => {
-    if (!isSuperAdmin) {
-      alert("No tienes permisos de Super Admin para eliminar transacciones.");
-      return;
-    }`
-);
+      {/* MODAL DISTRIBUIR FONDOS */}
+      {modalDistribuir && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-2xl border border-gray-200 dark:border-gray-800 relative my-8">
+            <button onClick={() => setModalDistribuir(false)} className="absolute top-4 right-4 p-1.5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white">
+              <X size={18} />
+            </button>
+            <h3 className="font-zodiak font-bold text-xl text-gray-900 dark:text-white mb-2">Distribuir Fondos</h3>
+            <p className="text-sm text-gray-500 mb-6">Caja Disponible: <strong className="text-green-600 dark:text-green-400">{formatCOP(cajaDisponible)}</strong></p>
+            <form onSubmit={handleDistribuir} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hacia Bóveda de Ahorro ($)</label>
+                <input type="number" value={formDistribuir.boveda} onChange={e=>setFormDistribuir({...formDistribuir, boveda: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold"/>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hacia Fondo Operación / Gastos ($)</label>
+                <input type="number" value={formDistribuir.operacion} onChange={e=>setFormDistribuir({...formDistribuir, operacion: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold"/>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hacia Socio Davilson ($)</label>
+                <input type="number" value={formDistribuir.davilson} onChange={e=>setFormDistribuir({...formDistribuir, davilson: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold"/>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Hacia Socio Santiago ($)</label>
+                <input type="number" value={formDistribuir.santiago} onChange={e=>setFormDistribuir({...formDistribuir, santiago: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold"/>
+              </div>
+              <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+                <button type="submit" className="w-full bg-gloss-burgundy text-white font-bold py-3 rounded-xl hover:opacity-90 shadow-lg">Confirmar Distribución</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+`;
+
+fj = fj.replace(/(<\/div>\s*)$/, modalsJsx + '\n$1');
 
 fs.writeFileSync('src/pages/Finanzas.jsx', fj, 'utf-8');
-console.log('✅ Applied phase 1 of Finanzas patch');
+console.log('✅ Base patches written');
