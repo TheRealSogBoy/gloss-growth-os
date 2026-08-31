@@ -18,6 +18,9 @@ import Dashboard from './pages/Dashboard';
 const NotFound = () => <div className="p-6"><h1 className="text-3xl font-zodiak mb-4 text-red-500">404</h1><p>Página no encontrada.</p></div>;
 
 function App() {
+  useEffect(() => {
+    Object.keys(localStorage).forEach(k => { if (k.startsWith('kanban_') || k.startsWith('gloss_') || k.startsWith('finanzas_') || k === 'viewMode' || k === 'theme') { localStorage.removeItem(k); } });
+  }, []);
   return (
     <AuthProvider>
       <ConfigProvider>

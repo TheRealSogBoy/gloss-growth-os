@@ -13,7 +13,7 @@ import { sendTelegramNotification, createCalendarEvent } from '../lib/notificati
 
 const COLUMNAS = ['Por Hacer', 'En Progreso', 'Revisión', 'Completado'];
 const DEFAULT_RESPONSABLES = ['Davilson', 'Santiago', 'Laura', 'Equipo Diseño', 'Equipo Ads', 'Sin Asignar', 'Yo (Actual)'];
-const CLIENTES_MOCK = ['SkinGlow Spa', 'Dr. Aesthetic Clinic', 'Dra. Elena Derma', 'Body & Soul Center', 'Interno (Agencia)'];
+
 
 const ETIQUETAS_COLORES = [
   { class: 'bg-red-100 text-red-700 border-red-200' },
@@ -93,6 +93,7 @@ export default function KanbanTareas() {
     : DEFAULT_RESPONSABLES;
 
   const [tareas, setTareas] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [loadingTareas, setLoadingTareas] = useState(true);
 
   useEffect(() => {
@@ -100,6 +101,7 @@ export default function KanbanTareas() {
   }, []);
 
   const fetchTareas = async () => {
+    try { const { data } = await supabase.from('clientes').select('negocio_nombre'); if (data) setClientes(data.map(c => c.negocio_nombre)); } catch(e) {}
     try {
       const { data, error } = await supabase.from('tareas').select('*').order('created_at', { ascending: false });
       if (error) throw error;
@@ -381,7 +383,7 @@ export default function KanbanTareas() {
           tareas={tareas}
           setTareas={setTareas}
           handleSaveModal={handleSaveModal}
-          CLIENTES_MOCK={CLIENTES_MOCK}
+          CLIENTES_MOCK={['Interno', ...clientes]}
           ETIQUETAS_COLORES={ETIQUETAS_COLORES}
         />
       )}

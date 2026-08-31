@@ -94,11 +94,7 @@ export const INITIAL_CATALOGO = [
 
 const CATEGORIAS = ['Todas', 'Publicidad', 'Contenido', 'Desarrollo Web', 'Posicionamiento', 'Asesoría'];
 
-const CLIENTES_MOCK = [
-  {  id: 'svc_7', nombre: 'SkinGlow Spa', contacto: 'Laura Martínez', ciudad: 'Bogotá', documento: 'NIT 901.234.567-8' },
-  {  id: 'svc_8', nombre: 'Dr. Aesthetic Clinic', contacto: 'Carlos Ruiz', ciudad: 'CDMX', documento: 'RFC AES980214XYZ' },
-  {  id: 'svc_9', nombre: 'Dra. Elena Derma', contacto: 'Elena Gómez', ciudad: 'Medellín', documento: 'CC 1.020.333.444' },
-];
+const CLIENTES_MOCK = [];
 
 const ICON_MAP = {
   Megaphone, Share2, Monitor, LayoutTemplate, Map, Briefcase,

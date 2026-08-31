@@ -31,7 +31,7 @@ const CATEGORIAS = ['Todos', 'cobro', 'gasto', 'reunion', 'tarea', 'manual'];
 const VISTAS = ['Agenda', 'Día', 'Semana', 'Mes']; 
 
 const DEFAULT_MIEMBROS = ['Santiago', 'Davilson', 'Laura', 'Equipo Comercial', 'Equipo Ads', 'Finanzas'];
-const CLIENTES_MOCK = ['Interno (Sin Cliente)', 'SkinGlow Spa', 'Dr. Aesthetic Clinic', 'Dra. Elena Derma', 'Body & Soul Center', 'VIMO IA'];
+
 
 // Generar slots de 30 mins para el selector de tiempo (AM/PM)
 const generateTimeSlots = () => {
@@ -559,7 +559,7 @@ export default function Calendario() {
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">Cliente Asociado</label>
                   <select value={form.cliente} onChange={e=>setForm({...form, cliente: e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-1 focus:ring-gloss-burgundy cursor-pointer">
-                    {CLIENTES_MOCK.map(c => <option key={c} value={c}>{c}</option>)}
+                    {['Interno (Sin Cliente)', ...rawClientes.map(c => c.negocio_nombre)].filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
