@@ -76,35 +76,205 @@ export default function Calendario() {
 
   const fetchEvents = async () => {
     try {
-        const { data, error } = await supabase.from('eventos').insert([newEvent]).select();
-        if (!error && data && data.length > 0) {
-          setRawEventos([...rawEventos, data[0]]);
+      const [evData, clData, gfData, trData] = await Promise.all([
+        supabase.from('eventos').select('*').order('created_at', { ascending: false }),
+        supabase.from('clientes').select('*'),
+        supabase.from('finanzas_gastos_fijos').select('*'),
+        supabase.from('tareas').select('*')
+      ]);
+      if (evData.data) setRawEventos(evData.data);
+      if (clData.data) setRawClientes(clData.data);
+      if (gfData.data) setRawGastos(gfData.data);
+      if (trData.data) setRawTareas(trData.data);
+    } catch (e) {
+      console.error('Error fetching calendar data:', e);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  
+  // Controles de Vista
+  const [vista, setVista] = useState('Mes');
+  const [mesActual, setMesActual] = useState(currentMonth);
+  const [añoActual, setAñoActual] = useState(currentYear);
+  
+  // Filtros
+  const [filtroTipo, setFiltroTipo] = useState('Todos');
+  
+  // Modales
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [form, setForm] = useState({ title: '', description: '', type: 'tarea', date: '', time: '', responsable: 'Santiago', cliente: 'Interno (Sin Cliente)' });
+
+  // === MOTOR DEL CALENDARIO ===
+  const changeDateRange = (offset) => {
+    if (vista === 'Mes' || vista === 'Agenda') {
+      let newMonth = mesActual + offset;
+      let newYear = añoActual;
+      if (newMonth > 11) { newMonth = 0; newYear++; }
+      else if (newMonth < 0) { newMonth = 11; newYear--; }
+      setMesActual(newMonth);
+      setAñoActual(newYear);
+    }
+  };
+
+  const events = useMemo(() => {
+    const all = [];
+    
+    // 1. Manuales
+    rawEventos.forEach(ev => {
+        all.push({ ...ev, type: ev.type || 'manual' });
+    });
+
+    const yearStart = añoActual - 1;
+    const yearEnd = añoActual + 1;
+
+    // 2. Cobros de Clientes
+    rawClientes.forEach(cl => {
+        const plan = cl.plan_pagos || [];
+        const cuotasPendientes = plan.filter(p => p.estado === 'Pendiente');
+        const isActive = plan.length > 0 && cuotasPendientes.length === 0;
+        
+        if (isActive && cl.contrato_dia_corte) {
+            for (let y = yearStart; y <= yearEnd; y++) {
+                for (let m = 0; m < 12; m++) {
+                    const d = new Date(y, m, cl.contrato_dia_corte);
+                    if (d.getMonth() === m) {
+                        all.push({
+                            id: `cobro_${cl.id}_${y}_${m}`,
+                            type: 'cobro',
+                            title: `💰 Cobro: ${cl.negocio_nombre}`,
+                            description: `Monto: ${cl.contrato_valor}`,
+                            date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                            amount: cl.contrato_valor,
+                            origin: '/directorio',
+                            cliente: cl.negocio_nombre
+                        });
+                    }
+                }
+            }
         }
-      } catch(err) {}
 
-      // TELEGRAM: notificar nuevo evento desde Calendario
-      const eventDateLabel = form.time
-        ? new Date(`${form.date}T${form.time}`).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
-        : new Date(form.date).toLocaleDateString('es-CO', { dateStyle: 'medium' });
+        // 3. Reuniones
+        const notas = cl.notas_kanban || {};
+        if (notas.fechaCita) {
+            const loc = cl.direccion_cita || notas.direccion_cita;
+            const desc = (notas.tipoCita || 'Cita') + (loc ? ` - 📍 ${loc}` : '');
+            all.push({
+                id: `cita_${cl.id}`,
+                type: 'reunion',
+                title: `📞 Reunión: ${cl.negocio_nombre}`,
+                description: desc,
+                date: notas.fechaCita,
+                origin: '/kanban-clientes',
+                cliente: cl.negocio_nombre
+            });
+        }
+    });
 
-      sendTelegramNotification(
-        `📆 <b>NUEVO EVENTO EN CALENDARIO</b>\n\n<b>Título:</b> ${form.title}\n<b>Tipo:</b> ${form.type}\n<b>Fecha:</b> ${eventDateLabel}\n<b>Cliente:</b> ${form.cliente}\n<b>Responsable:</b> ${form.responsable}${form.description ? '\n<b>Notas:</b> ' + form.description : ''}`,
-        'group'
-      );
+    // 4. Gastos Fijos
+    rawGastos.forEach(gf => {
+        if (gf.dia_cobro) {
+            for (let y = yearStart; y <= yearEnd; y++) {
+                for (let m = 0; m < 12; m++) {
+                    const d = new Date(y, m, gf.dia_cobro);
+                    if (d.getMonth() === m) {
+                        all.push({
+                            id: `gf_${gf.id}_${y}_${m}`,
+                            type: 'gasto',
+                            title: `📉 Pago SaaS: ${gf.concepto}`,
+                            description: gf.categoria,
+                            date: `${y}-${String(m + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                            amount: gf.monto,
+                            origin: '/finanzas'
+                        });
+                    }
+                }
+            }
+        }
+    });
 
-      // GOOGLE CALENDAR: sincronizar evento
-      if (form.date) {
-        const startISO = new Date(form.time ? `${form.date}T${form.time}` : `${form.date}T09:00:00`).toISOString();
-        const endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
-        createCalendarEvent({
-          title: form.title,
-          description: `Tipo: ${form.type} | Cliente: ${form.cliente} | Responsable: ${form.responsable}\n${form.description || ''}`,
-          startDateTime: startISO,
-          endDateTime: endISO,
-        });
+    // 5. Tareas Kanban
+    rawTareas.forEach(tr => {
+        if (tr.fecha_limite) {
+            all.push({
+                id: `tarea_${tr.id}`,
+                type: 'tarea',
+                title: `📋 Tarea: ${tr.titulo}`,
+                description: tr.descripcion || '',
+                date: tr.fecha_limite,
+                origin: '/kanban-tareas',
+                responsable: tr.responsable
+            });
+        }
+    });
+
+    return all;
+  }, [rawEventos, rawClientes, rawGastos, rawTareas, añoActual]);
+
+  const filteredEvents = useMemo(() => {
+    return events.filter(e => filtroTipo === 'Todos' || e.type === filtroTipo)
+                 .sort((a,b) => new Date(a.date) - new Date(b.date));
+  }, [events, filtroTipo]);
+
+  const eventsByDay = useMemo(() => {
+    const map = {};
+    filteredEvents.forEach(e => {
+      const d = new Date(e.date);
+      d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
+      if (d.getMonth() === mesActual && d.getFullYear() === añoActual) {
+        const day = d.getDate();
+        if (!map[day]) map[day] = [];
+        map[day].push(e);
       }
+    });
+    return map;
+  }, [filteredEvents, mesActual, añoActual]);
 
-      setIsCreateOpen(false);
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    const newDate = form.time ? `${form.date}T${form.time}` : form.date;
+    const newEvent = {
+      type: form.type,
+      title: form.title,
+      description: form.description,
+      date: newDate,
+      origin: '/calendario',
+      responsable: form.responsable,
+      cliente: form.cliente
+    };
+    
+    try {
+      const { data, error } = await supabase.from('eventos').insert([newEvent]).select();
+      if (!error && data && data.length > 0) {
+        setRawEventos([...rawEventos, data[0]]);
+      }
+    } catch(err) {}
+
+    // TELEGRAM: notificar nuevo evento desde Calendario
+    const eventDateLabel = form.time
+      ? new Date(`${form.date}T${form.time}`).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+      : new Date(form.date).toLocaleDateString('es-CO', { dateStyle: 'medium' });
+
+    sendTelegramNotification(
+      `📆 <b>NUEVO EVENTO EN CALENDARIO</b>\n\n<b>Título:</b> ${form.title}\n<b>Tipo:</b> ${form.type}\n<b>Fecha:</b> ${eventDateLabel}\n<b>Cliente:</b> ${form.cliente}\n<b>Responsable:</b> ${form.responsable}${form.description ? '\n<b>Notas:</b> ' + form.description : ''}`,
+      'group'
+    );
+
+    // GOOGLE CALENDAR: sincronizar evento
+    if (form.date) {
+      const startISO = new Date(form.time ? `${form.date}T${form.time}` : `${form.date}T09:00:00`).toISOString();
+      const endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
+      createCalendarEvent({
+        title: form.title,
+        description: `Tipo: ${form.type} | Cliente: ${form.cliente} | Responsable: ${form.responsable}\n${form.description || ''}`,
+        startDateTime: startISO,
+        endDateTime: endISO,
+      });
+    }
+    
+    setIsCreateOpen(false);
     setForm({ title: '', description: '', type: 'tarea', date: '', time: '', responsable: 'Santiago', cliente: 'Interno (Sin Cliente)' });
   };
 
