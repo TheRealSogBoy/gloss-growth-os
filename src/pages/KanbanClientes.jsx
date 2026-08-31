@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
-import { triggerN8nWebhook } from '../utils/n8n';
+import { sendTelegramNotification, createCalendarEvent } from '../lib/notifications';
 import { INITIAL_CATALOGO } from './Catalogo';
 import { 
   Building2, User, DollarSign, GripVertical, MapPin, 
@@ -287,16 +287,22 @@ export default function KanbanClientes() {
         }
         logAuditoria(user, 'Pipeline Comercial', 'EDITAR', `Notas guardadas para ${selectedCliente.negocio?.nombre}`);
         
-        // TRIGGER n8n WEBHOOK (CITA)
-        if (selectedCliente.notas?.tipoCita && selectedCliente.notas?.tipoCita !== 'Ninguna' && selectedCliente.notas?.fechaCita) {
-          triggerN8nWebhook({
-            tipo_evento: 'cita',
-            titulo: `Cita: ${selectedCliente.negocio?.nombre || 'Cliente'}`,
-            descripcion: selectedCliente.notas.texto || '',
-            fecha_inicio: new Date(selectedCliente.notas.fechaCita).toISOString(),
-            fecha_fin: new Date(new Date(selectedCliente.notas.fechaCita).getTime() + 60*60*1000).toISOString(),
-            email_cliente: selectedCliente.negocio_correos || ''
+        // VERCEL SERVERLESS TRIGGERS (CITA)
+          const startDate = new Date(selectedCliente.notas.fechaCita).toISOString();
+          const endDate = new Date(new Date(selectedCliente.notas.fechaCita).getTime() + 60*60*1000).toISOString();
+          
+          createCalendarEvent({
+            title: `Cita: ${selectedCliente.negocio?.nombre || 'Cliente'}`,
+            description: selectedCliente.notas.texto || '',
+            startDateTime: startDate,
+            endDateTime: endDate,
+            location: selectedCliente.direccion_cita || ''
           });
+
+          sendTelegramNotification(
+            `🔔 <b>NUEVA CITA AGENDADA</b>\n\n<b>Cliente:</b> ${selectedCliente.negocio?.nombre}\n<b>Fecha:</b> ${new Date(startDate).toLocaleString('es-CO')}\n<b>Tipo:</b> ${selectedCliente.notas.tipoCita}`,
+            'group'
+          );
         }
       } catch (err) {
         console.error('Error guardando modal de cliente:', err);

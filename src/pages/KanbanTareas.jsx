@@ -9,7 +9,7 @@ import {
 import { useConfig } from '../context/ConfigContext';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
-import { triggerN8nWebhook } from '../utils/n8n';
+import { sendTelegramNotification, createCalendarEvent } from '../lib/notifications';
 
 const COLUMNAS = ['Por Hacer', 'En Progreso', 'Revisión', 'Completado'];
 const DEFAULT_RESPONSABLES = ['Davilson', 'Santiago', 'Laura', 'Equipo Diseño', 'Equipo Ads', 'Sin Asignar', 'Yo (Actual)'];
@@ -206,14 +206,21 @@ export default function KanbanTareas() {
         setTareas([...tareas, mapToForm(data[0])]);
         logAuditoria(user, 'Kanban Tareas', 'CREAR', `Nueva tarea creada: ${nuevaTarea.titulo}`);
         
-        // TRIGGER n8n WEBHOOK (TAREA)
-        triggerN8nWebhook({
-          tipo_evento: 'tarea',
-          titulo: nuevaTarea.titulo,
-          descripcion: nuevaTarea.descripcion || '',
-          fecha_inicio: new Date().toISOString(),
-          fecha_fin: nuevaTarea.fechaLimite ? new Date(nuevaTarea.fechaLimite).toISOString() : new Date().toISOString()
-        });
+        // VERCEL SERVERLESS TRIGGERS (TAREA)
+          const startDate = new Date().toISOString();
+          const endDate = nuevaTarea.fechaLimite ? new Date(nuevaTarea.fechaLimite).toISOString() : new Date().toISOString();
+          
+          createCalendarEvent({
+            title: `Tarea: ${nuevaTarea.titulo}`,
+            description: nuevaTarea.descripcion || '',
+            startDateTime: startDate,
+            endDateTime: endDate
+          });
+
+          sendTelegramNotification(
+            `📋 <b>NUEVA TAREA ASIGNADA</b>\n\n<b>Tarea:</b> ${nuevaTarea.titulo}\n<b>Límite:</b> ${nuevaTarea.fechaLimite || 'Sin límite'}\n<b>Asignado a:</b> ${nuevaTarea.responsable}`,
+            'group'
+          );
       }
     } catch (err) {
       console.error('Error insertando nueva tarea:', err);

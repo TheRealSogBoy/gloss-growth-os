@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { logAuditoria } from '../utils/audit';
-import { triggerN8nWebhook } from '../utils/n8n';
+import { sendTelegramNotification, createCalendarEvent } from '../lib/notifications';
 import { 
   Plus, Trash2, TrendingUp, TrendingDown, PiggyBank, Users, Wallet, 
   RefreshCw, Landmark, ArrowDownCircle, ArrowUpCircle, CreditCard, 
@@ -391,14 +391,11 @@ export default function Finanzas() {
       setIngresos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...ingresos]);
       logAuditoria(user, 'Finanzas', 'CREAR', `Nuevo Ingreso: ${payload.concepto} - $${payload.monto}`);
       
-      // TRIGGER n8n WEBHOOK (COBRO)
-      triggerN8nWebhook({
-        tipo_evento: 'cobro',
-        titulo: payload.concepto,
-        fecha_inicio: new Date().toISOString(),
-        fecha_fin: new Date().toISOString(),
-        monto: payload.monto
-      });
+      // VERCEL SERVERLESS TRIGGERS (COBRO)
+        sendTelegramNotification(
+          `💰 <b>NUEVO INGRESO REGISTRADO</b>\n\n<b>Concepto:</b> ${payload.concepto}\n<b>Monto:</b> ${payload.monto}\n<b>Origen:</b> ${payload.origen}`,
+          'group'
+        );
     }
     setModalIngreso(false);
   };
