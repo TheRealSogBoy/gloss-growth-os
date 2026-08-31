@@ -357,8 +357,8 @@ export default function KanbanClientes() {
       </div>
 
       {/* TABLERO KANBAN */}
-      <div className="flex-1 overflow-x-auto custom-scrollbar">
-        <div className="flex gap-6 min-w-max pb-4 h-full items-start">
+      <div className="flex-1 overflow-x-auto custom-scrollbar snap-x snap-mandatory touch-manipulation">
+        <div className="flex gap-4 md:gap-6 min-w-max pb-4 h-full items-start flex-nowrap px-2 md:px-0">
           
           {COLUMNAS.map(columna => {
             const clientesColumna = clientesFiltrados.filter(c => (c?.contrato?.estadoContrato || c?.estado_contrato) === columna);
@@ -366,7 +366,7 @@ export default function KanbanClientes() {
             return (
               <div 
                 key={columna}
-                className="w-[320px] bg-gray-50/90 dark:bg-gray-900/40 rounded-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-full shadow-sm"
+                className="w-[85vw] sm:w-[320px] min-w-[280px] md:min-w-[320px] snap-center touch-manipulation bg-gray-50/90 dark:bg-gray-900/40 rounded-2xl border border-gray-200 dark:border-gray-800 flex flex-col max-h-[80vh] md:max-h-full shadow-sm"
                 onDragOver={onDragOver}
                 onDrop={(e) => onDrop(e, columna)}
               >
@@ -389,7 +389,7 @@ export default function KanbanClientes() {
                         key={c.id}
                         draggable
                         onDragStart={(e) => onDragStart(e, c.id)}
-                        className={`bg-white dark:bg-gloss-black p-4 rounded-xl shadow-sm transition-all cursor-grab active:cursor-grabbing group relative hover:border-gloss-burgundy/40 border-2 ${remarketingStatus?.urgent ? 'border-red-400' : 'border-gray-200 dark:border-gray-700'}`}
+                        className={`bg-white dark:bg-gloss-black p-4 rounded-xl shadow-sm transition-all cursor-grab active:cursor-grabbing group relative hover:border-gloss-burgundy/40 border-2 touch-none ${remarketingStatus?.urgent ? 'border-red-400' : 'border-gray-200 dark:border-gray-700'}`}
                       >
                         {/* Click Area for Modal */}
                         <div className="absolute inset-0 z-0 cursor-pointer" onClick={() => setSelectedCliente(c)}></div>

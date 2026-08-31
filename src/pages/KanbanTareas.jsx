@@ -236,15 +236,15 @@ export default function KanbanTareas() {
       </div>
 
       {/* TABLERO KANBAN */}
-      <div className="flex-1 overflow-x-auto custom-scrollbar">
-        <div className="flex gap-6 min-w-max pb-4 h-full items-start">
+      <div className="flex-1 overflow-x-auto custom-scrollbar snap-x snap-mandatory touch-manipulation">
+        <div className="flex gap-4 md:gap-6 min-w-max pb-4 h-full items-start flex-nowrap px-2 md:px-0">
           
           {COLUMNAS.map(columna => {
             const tareasColumna = tareas.filter(t => t.estado === columna);
             return (
               <div 
                 key={columna}
-                className="w-[320px] bg-gray-100 dark:bg-gray-900/60 rounded-2xl flex flex-col max-h-full border border-gray-200 dark:border-gray-800"
+                className="w-[85vw] sm:w-[320px] min-w-[280px] md:min-w-[320px] snap-center touch-manipulation bg-gray-100 dark:bg-gray-900/60 rounded-2xl flex flex-col max-h-[80vh] md:max-h-full border border-gray-200 dark:border-gray-800"
                 onDragOver={onDragOver}
                 onDrop={(e) => onDrop(e, columna)}
               >
@@ -270,7 +270,7 @@ export default function KanbanTareas() {
                         draggable 
                         onDragStart={(e) => onDragStart(e, t.id)}
                         onClick={() => setSelectedTarea(t)}
-                        className="bg-white dark:bg-gloss-black p-3.5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-grab active:cursor-grabbing hover:border-gloss-burgundy/50 transition-all group relative"
+                        className="bg-white dark:bg-gloss-black p-3.5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 cursor-grab active:cursor-grabbing hover:border-gloss-burgundy/50 transition-all group relative touch-none"
                       >
                         {/* Etiquetas y Prioridad */}
                         <div className="flex flex-wrap gap-1 mb-2">
