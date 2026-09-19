@@ -80,6 +80,17 @@ export default function Finanzas() {
   const [modalEditar, setModalEditar] = useState(false);
   const [itemAEditar, setItemAEditar] = useState(null);
 
+  // === MODAL DINÁMICO PAGAR / ABONAR TDC ===
+  const [modalPagarTDC, setModalPagarTDC] = useState(false);
+  const [itemPagarTDC, setItemPagarTDC] = useState(null);
+  const [formPagarTDC, setFormPagarTDC] = useState({
+    monto: '',
+    tipoPago: 'total',
+    metodo: 'Caja General',
+    fecha: new Date().toISOString().split('T')[0],
+    concepto: ''
+  });
+
   // === ESTADOS DE DATOS ===
   const [ingresos, setIngresos] = useState([]);
   const [gastos, setGastos] = useState([]);
@@ -778,20 +789,157 @@ export default function Finanzas() {
     }
   };
 
-  const pagarTarjetaCompleta = async () => {
-    if (comprasTDC.length === 0) return;
-    const tTDC = comprasTDC.reduce((acc, curr) => acc + Number(curr.monto), 0);
-    const dateStr = new Date().toISOString().split('T')[0];
-    const payload = { concepto: 'Pago Tarjeta de Crédito', categoria: 'Intereses', monto: tTDC, fecha: dateStr, metodo: 'Efectivo/Transferencia' };
-    
-    const { data } = await supabase.from('finanzas_gastos').insert([payload]).select();
-    if (data && data.length > 0) setGastos([{ id: data[0].id, created_at: data[0].created_at, ...payload }, ...gastos]);
-
-    for (const c of comprasTDC) {
-      await supabase.from('finanzas_compras_tdc').delete().eq('id', c.id);
-    }
-    setComprasTDC([]);
+  const abrirModalPagarTDC = (compra) => {
+    setItemPagarTDC(compra);
+    setFormPagarTDC({
+      monto: compra.monto,
+      tipoPago: 'total',
+      metodo: 'Caja General',
+      fecha: new Date().toISOString().split('T')[0],
+      concepto: `Pago TDC: ${compra.concepto}`
+    });
+    setModalPagarTDC(true);
   };
+
+  const abrirModalPagarTDCGlobal = () => {
+    const tTDC = (comprasTDC || []).reduce((acc, curr) => acc + Number(curr.monto), 0);
+    if (tTDC <= 0) {
+      alert('No hay deudas pendientes en la Tarjeta de Crédito.');
+      return;
+    }
+    setItemPagarTDC({
+      isGlobal: true,
+      monto: tTDC,
+      concepto: 'Pago Total / Abono Tarjeta de Crédito'
+    });
+    setFormPagarTDC({
+      monto: tTDC,
+      tipoPago: 'total',
+      metodo: 'Caja General',
+      fecha: new Date().toISOString().split('T')[0],
+      concepto: 'Pago Total Tarjeta de Crédito'
+    });
+    setModalPagarTDC(true);
+  };
+
+  const handleConfirmarPagoTDC = async (e) => {
+    e.preventDefault();
+    if (!itemPagarTDC) return;
+
+    const montoNum = Number(formPagarTDC.monto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      alert('Por favor ingresa un monto válido mayor a 0.');
+      return;
+    }
+
+    if (montoNum > itemPagarTDC.monto) {
+      alert(`El monto ingresado (${formatCOP(montoNum)}) supera la deuda pendiente (${formatCOP(itemPagarTDC.monto)}).`);
+      return;
+    }
+
+    const { isGlobal } = itemPagarTDC;
+    const esTotal = montoNum >= itemPagarTDC.monto;
+    const fechaPago = formPagarTDC.fecha || new Date().toISOString().split('T')[0];
+    const metodoPago = formPagarTDC.metodo || 'Caja General';
+    const conceptoFinal = formPagarTDC.concepto || (isGlobal 
+      ? (esTotal ? 'Pago Total Tarjeta de Crédito' : `Abono a Tarjeta de Crédito: ${formatCOP(montoNum)}`) 
+      : (esTotal ? `Pago TDC: ${itemPagarTDC.concepto}` : `Abono TDC: ${itemPagarTDC.concepto}`));
+
+    try {
+      // 1. Insertar gasto en finanzas_gastos
+      const payloadGasto = {
+        concepto: conceptoFinal,
+        categoria: itemPagarTDC.categoria || 'Intereses',
+        monto: montoNum,
+        fecha: fechaPago,
+        metodo: metodoPago
+      };
+
+      const { data: gastoData, error: gastoErr } = await supabase.from('finanzas_gastos').insert([payloadGasto]).select();
+      if (gastoErr) throw gastoErr;
+      if (gastoData && gastoData.length > 0) {
+        setGastos(prev => [{ id: gastoData[0].id, created_at: gastoData[0].created_at, ...payloadGasto }, ...prev]);
+      }
+
+      // 2. Descontar de Bóveda si el método fue Bóveda de Agencia
+      if (metodoPago === 'Bóveda de Agencia') {
+        const nuevoSaldoBoveda = Math.max(0, saldoBoveda - montoNum);
+        await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldoBoveda }]);
+        setSaldoBoveda(nuevoSaldoBoveda);
+      }
+
+      // 3. Actualizar o eliminar de finanzas_compras_tdc
+      if (isGlobal) {
+        if (esTotal) {
+          for (const c of comprasTDC) {
+            await supabase.from('finanzas_compras_tdc').delete().eq('id', c.id);
+          }
+          setComprasTDC([]);
+        } else {
+          // Abono global: descontar de compras de forma cronológica
+          let restante = montoNum;
+          const nuevasCompras = [];
+          for (const c of comprasTDC) {
+            if (restante <= 0) {
+              nuevasCompras.push(c);
+            } else if (restante >= c.monto) {
+              restante -= c.monto;
+              await supabase.from('finanzas_compras_tdc').delete().eq('id', c.id);
+            } else {
+              const nuevoMonto = c.monto - restante;
+              restante = 0;
+              await supabase.from('finanzas_compras_tdc').update({ monto: nuevoMonto }).eq('id', c.id);
+              nuevasCompras.push({ ...c, monto: nuevoMonto });
+            }
+          }
+          setComprasTDC(nuevasCompras);
+        }
+      } else {
+        // Pago a una compra/deuda específica
+        if (esTotal) {
+          const { error: delErr } = await supabase.from('finanzas_compras_tdc').delete().eq('id', itemPagarTDC.id);
+          if (delErr) throw delErr;
+          setComprasTDC(prev => prev.filter(c => c.id !== itemPagarTDC.id));
+        } else {
+          const nuevoMonto = itemPagarTDC.monto - montoNum;
+          const { error: updErr } = await supabase.from('finanzas_compras_tdc').update({ monto: nuevoMonto }).eq('id', itemPagarTDC.id);
+          if (updErr) throw updErr;
+          setComprasTDC(prev => prev.map(c => c.id === itemPagarTDC.id ? { ...c, monto: nuevoMonto } : c));
+        }
+      }
+
+      // 4. Notificaciones
+      try {
+        const detalleNotif = isGlobal 
+          ? (esTotal ? `Pago total de ${formatCOP(montoNum)} a la Tarjeta de Crédito. Origen: ${metodoPago}` : `Abono de ${formatCOP(montoNum)} a la TDC. Saldo restante: ${formatCOP(itemPagarTDC.monto - montoNum)}. Origen: ${metodoPago}`)
+          : (esTotal ? `Deuda liquidada: "${itemPagarTDC.concepto}" por ${formatCOP(montoNum)}. Origen: ${metodoPago}` : `Abono de ${formatCOP(montoNum)} a "${itemPagarTDC.concepto}". Saldo restante: ${formatCOP(itemPagarTDC.monto - montoNum)}. Origen: ${metodoPago}`);
+
+        await supabase.from('notificaciones').insert([{
+          titulo: esTotal ? 'Pago de Tarjeta de Crédito' : 'Abono a Tarjeta de Crédito',
+          detalle: detalleNotif,
+          prioridad: 'media',
+          created_at: new Date().toISOString()
+        }]);
+
+        await sendTelegramNotification(
+          `💳 <b>${esTotal ? 'PAGO TOTAL TDC' : 'ABONO A DEUDA TDC'}:</b>\n\n<b>Concepto:</b> ${conceptoFinal}\n<b>Monto Pagado:</b> ${formatCOP(montoNum)}\n<b>Saldo Restante:</b> ${formatCOP(Math.max(0, itemPagarTDC.monto - montoNum))}\n<b>Método / Origen:</b> ${metodoPago}\n<b>Registrado por:</b> ${user?.email || 'Admin'}`,
+          'group'
+        );
+      } catch (err) {
+        console.error('Error enviando notificación de pago TDC:', err);
+      }
+
+      logAuditoria(user, 'Finanzas', 'EDITAR', `Pago ${esTotal ? 'Total' : 'Parcial'} TDC (${conceptoFinal}): ${formatCOP(montoNum)} via ${metodoPago}`);
+      alert(esTotal ? '¡Deuda de tarjeta liquidada exitosamente!' : `¡Abono de ${formatCOP(montoNum)} registrado con éxito!`);
+      setModalPagarTDC(false);
+      setItemPagarTDC(null);
+    } catch (err) {
+      console.error('Error procesando pago de tarjeta:', err);
+      alert('Error al registrar pago: ' + (err.message || 'Error desconocido'));
+    }
+  };
+
+  const pagarTarjetaCompleta = abrirModalPagarTDCGlobal;
 
   const deleteItem = async (tabla, setter, list, id, label = 'registro') => {
     if (!isSuperAdmin) {
@@ -1323,8 +1471,12 @@ export default function Finanzas() {
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-900/30 flex justify-between items-center border-b border-gray-100 dark:border-gray-800">
             <span className="text-xs text-gray-500 px-2">No afecta utilidad hasta pagarse.</span>
-            <button onClick={pagarTarjetaCompleta} disabled={comprasTDC.length === 0} className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-colors ${comprasTDC.length > 0 ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-300' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-              Pagar Tarjeta
+            <button 
+              onClick={abrirModalPagarTDCGlobal} 
+              disabled={comprasTDC.length === 0} 
+              className={`text-xs px-3 py-1.5 rounded-xl font-bold transition-colors flex items-center gap-1.5 shadow-sm ${comprasTDC.length > 0 ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+            >
+              <CreditCard size={14} /> Pagar / Abonar Tarjeta
             </button>
           </div>
           <div className="overflow-x-auto max-h-60 overflow-y-auto">
@@ -1337,6 +1489,13 @@ export default function Finanzas() {
                     <td className="p-3 font-medium text-red-500 text-right">-{formatCOP(c.monto)}</td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button 
+                          onClick={() => abrirModalPagarTDC(c)} 
+                          className="px-2.5 py-1 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300 dark:hover:bg-green-900/60 font-bold text-xs flex items-center gap-1 transition-colors border border-green-200 dark:border-green-800 shadow-sm"
+                          title="Pagar o abonar a esta deuda de TDC"
+                        >
+                          <CheckCircle size={13} /> Pagar / Abonar
+                        </button>
                         <button onClick={() => openEditModal('compra_tdc', c, 'finanzas_compras_tdc')} className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="Editar compra TDC"><Pencil size={15} /></button>
                         <button onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id, 'compra TDC')} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Eliminar compra TDC"><Trash2 size={15} /></button>
                       </div>
@@ -1990,6 +2149,206 @@ export default function Finanzas() {
                   className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs hover:bg-gloss-burgundy/90 transition-colors shadow-md"
                 >
                   Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dinámico Pagar / Abonar TDC */}
+      {modalPagarTDC && itemPagarTDC && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400">
+                  <CreditCard size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-zodiak font-bold text-gray-900 dark:text-white leading-tight">
+                    {itemPagarTDC.isGlobal ? 'Pagar / Abonar Tarjeta' : 'Pagar Deuda TDC'}
+                  </h3>
+                  <p className="text-xs text-gray-500 line-clamp-1">
+                    {itemPagarTDC.isGlobal ? 'Pago global a toda la tarjeta' : itemPagarTDC.concepto}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setModalPagarTDC(false); setItemPagarTDC(null); }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Resumen de la deuda */}
+            <div className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 mb-4">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-gray-500 dark:text-gray-400">Deuda actual pendiente:</span>
+                <span className="font-bold text-red-600 dark:text-red-400 text-sm">
+                  {formatCOP(itemPagarTDC.monto)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-gray-500 dark:text-gray-400">Saldo restante tras este pago:</span>
+                <span className="font-bold text-gray-800 dark:text-gray-200">
+                  {formatCOP(Math.max(0, itemPagarTDC.monto - (Number(formPagarTDC.monto) || 0)))}
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmarPagoTDC} className="space-y-4">
+              {/* Selector de Tipo de Pago: Total o Parcial */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Modalidad de Pago</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormPagarTDC(prev => ({
+                        ...prev,
+                        tipoPago: 'total',
+                        monto: itemPagarTDC.monto,
+                        concepto: itemPagarTDC.isGlobal 
+                          ? 'Pago Total Tarjeta de Crédito' 
+                          : `Pago TDC: ${itemPagarTDC.concepto}`
+                      }));
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                      formPagarTDC.tipoPago === 'total'
+                        ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    Pago Total ({formatCOP(itemPagarTDC.monto)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormPagarTDC(prev => ({
+                        ...prev,
+                        tipoPago: 'parcial',
+                        monto: prev.monto === itemPagarTDC.monto ? Math.round(itemPagarTDC.monto / 2) : prev.monto,
+                        concepto: itemPagarTDC.isGlobal 
+                          ? 'Abono a Tarjeta de Crédito' 
+                          : `Abono TDC: ${itemPagarTDC.concepto}`
+                      }));
+                    }}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
+                      formPagarTDC.tipoPago === 'parcial'
+                        ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                        : 'bg-gray-50 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    Abono Parcial (Elegir Monto)
+                  </button>
+                </div>
+              </div>
+
+              {/* Monto a Pagar */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold uppercase text-gray-500">Monto a Pagar (COP)</label>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFormPagarTDC(prev => ({ ...prev, monto: Math.round(itemPagarTDC.monto * 0.25), tipoPago: 'parcial' }))}
+                      className="text-[10px] px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-600 dark:text-gray-300 font-medium"
+                    >
+                      25%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormPagarTDC(prev => ({ ...prev, monto: Math.round(itemPagarTDC.monto * 0.5), tipoPago: 'parcial' }))}
+                      className="text-[10px] px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-600 dark:text-gray-300 font-medium"
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormPagarTDC(prev => ({ ...prev, monto: itemPagarTDC.monto, tipoPago: 'total' }))}
+                      className="text-[10px] px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-600 dark:text-gray-300 font-medium"
+                    >
+                      100%
+                    </button>
+                  </div>
+                </div>
+                <input 
+                  required 
+                  type="number" 
+                  min="1" 
+                  max={itemPagarTDC.monto}
+                  value={formPagarTDC.monto} 
+                  onChange={e => {
+                    const val = e.target.value;
+                    setFormPagarTDC(prev => ({ 
+                      ...prev, 
+                      monto: val,
+                      tipoPago: Number(val) >= itemPagarTDC.monto ? 'total' : 'parcial'
+                    }));
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg text-red-600 dark:text-red-400" 
+                  placeholder="0" 
+                />
+              </div>
+
+              {/* Origen de Fondos */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Pagar Desde (Origen del Dinero)</label>
+                <select 
+                  value={formPagarTDC.metodo} 
+                  onChange={e => setFormPagarTDC({ ...formPagarTDC, metodo: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-gloss-burgundy dark:text-gloss-pink cursor-pointer text-xs"
+                >
+                  <option>Caja General</option>
+                  <option>Bóveda de Agencia</option>
+                  <option>Cuenta Davilson</option>
+                  <option>Cuenta Santiago</option>
+                  <option>Efectivo / Transferencia</option>
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Se generará automáticamente el registro de gasto correspondiente en el Libro Mayor.
+                </p>
+              </div>
+
+              {/* Fecha y Detalle */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha</label>
+                  <input 
+                    required 
+                    type="date" 
+                    value={formPagarTDC.fecha} 
+                    onChange={e => setFormPagarTDC({ ...formPagarTDC, fecha: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium text-xs" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Concepto / Nota</label>
+                  <input 
+                    type="text" 
+                    value={formPagarTDC.concepto} 
+                    onChange={e => setFormPagarTDC({ ...formPagarTDC, concepto: e.target.value })}
+                    placeholder="Ej. Pago cuota..."
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium text-xs" 
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => { setModalPagarTDC(false); setItemPagarTDC(null); }}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-bold text-xs hover:bg-red-700 transition-colors shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle size={15} /> Confirmar Pago
                 </button>
               </div>
             </form>
