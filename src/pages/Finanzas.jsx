@@ -56,9 +56,29 @@ const formatTimestamp = (createdAt, fallbackDate) => {
 };
 
 export default function Finanzas() {
-  const { user, isSuperAdmin } = useAuth();
+  const { user, perfil, isSuperAdmin: authIsSuperAdmin } = useAuth();
+
+  const isSuperAdmin = useMemo(() => {
+    if (authIsSuperAdmin) return true;
+    const email = (user?.email || perfil?.email || '').toLowerCase().trim();
+    const nombre = (perfil?.nombre_completo || user?.user_metadata?.nombre || '').toLowerCase();
+    const rol = (perfil?.rol || '').toLowerCase().trim();
+    return (
+      rol === 'superadmin' ||
+      rol === 'admin' ||
+      rol === 'socio' ||
+      email === 'santiagokansas890@gmail.com' ||
+      email.includes('santiago') ||
+      nombre.includes('santiago')
+    );
+  }, [authIsSuperAdmin, user, perfil]);
+
   const [auditLogs, setAuditLogs] = useState([]);
   const [showAudit, setShowAudit] = useState(false);
+
+  // === MODAL DE EDICIÓN UNIVERSAL ===
+  const [modalEditar, setModalEditar] = useState(false);
+  const [itemAEditar, setItemAEditar] = useState(null);
 
   // === ESTADOS DE DATOS ===
   const [ingresos, setIngresos] = useState([]);
@@ -327,6 +347,9 @@ export default function Finanzas() {
     ingresos.forEach(i => {
       list.push({
         id: 'ing_' + i.id,
+        realId: i.id,
+        entityType: 'ingreso',
+        raw: i,
         fecha: i.fecha || 'Reciente',
         created_at: i.created_at || i.fecha,
         tipo: 'Ingreso',
@@ -343,6 +366,9 @@ export default function Finanzas() {
       const isBoveda = g.metodo === 'Bóveda de Agencia';
       list.push({
         id: 'gas_' + g.id,
+        realId: g.id,
+        entityType: 'gasto',
+        raw: g,
         fecha: g.fecha || 'Reciente',
         created_at: g.created_at || g.fecha,
         tipo: isBoveda ? 'Gasto Bóveda' : 'Gasto General',
@@ -358,6 +384,9 @@ export default function Finanzas() {
     retiros.forEach(r => {
       list.push({
         id: 'ret_' + r.id,
+        realId: r.id,
+        entityType: 'retiro',
+        raw: r,
         fecha: r.fecha || 'Reciente',
         created_at: r.created_at || r.fecha,
         tipo: 'Retiro Socio',
@@ -379,6 +408,9 @@ export default function Finanzas() {
 
       list.push({
         id: 'trb_' + t.id,
+        realId: t.id,
+        entityType: 'transferencia_boveda',
+        raw: t,
         fecha: t.fecha || 'Reciente',
         created_at: t.created_at || t.fecha,
         tipo: t.tipo === 'distribucion_caja' ? 'Distr. Caja' : 'Mov. Bóveda',
@@ -761,14 +793,208 @@ export default function Finanzas() {
     setComprasTDC([]);
   };
 
-  const deleteItem = async (tabla, setter, list, id) => {
-    if (!(isSuperAdmin ?? false)) {
+  const deleteItem = async (tabla, setter, list, id, label = 'registro') => {
+    if (!isSuperAdmin) {
       alert("No tienes permisos de Super Admin para eliminar transacciones.");
       return;
     }
-    await supabase.from(tabla).delete().eq('id', id);
-    logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla}`);
-    setter(list.filter(item => item.id !== id));
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar este ${label}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      const { error } = await supabase.from(tabla).delete().eq('id', id);
+      if (error) throw error;
+      logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado registro de ${tabla} (ID: ${id})`);
+      if (setter) {
+        setter(prev => (Array.isArray(prev) ? prev.filter(item => item.id !== id) : list.filter(item => item.id !== id)));
+      }
+    } catch (err) {
+      console.error('Error eliminando item:', err);
+      alert('Error al eliminar: ' + (err.message || 'Error en el servidor'));
+    }
+  };
+
+  const deleteMovimientoLibro = async (m) => {
+    if (!isSuperAdmin) {
+      alert("No tienes permisos de Super Admin para eliminar transacciones.");
+      return;
+    }
+    if (String(m.realId).startsWith('virtual_')) {
+      alert("Este ingreso está sincronizado automáticamente desde el CRM (Clientes). Para gestionarlo, edita el cliente en Directorio.");
+      return;
+    }
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar este movimiento ("${m.concepto}") de ${formatCOP(m.monto)}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      if (m.entityType === 'ingreso') {
+        const { error } = await supabase.from('finanzas_ingresos').delete().eq('id', m.realId);
+        if (error) throw error;
+        setIngresos(prev => prev.filter(i => i.id !== m.realId));
+        logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado ingreso: ${m.concepto} - ${m.monto}`);
+      } else if (m.entityType === 'gasto') {
+        const { error } = await supabase.from('finanzas_gastos').delete().eq('id', m.realId);
+        if (error) throw error;
+        setGastos(prev => prev.filter(g => g.id !== m.realId));
+        if (m.tipo === 'Gasto Bóveda') {
+          const nuevoSaldo = saldoBoveda + Number(m.monto);
+          await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+          setSaldoBoveda(nuevoSaldo);
+        }
+        logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado gasto: ${m.concepto} - ${m.monto}`);
+      } else if (m.entityType === 'retiro') {
+        const { error } = await supabase.from('finanzas_retiros').delete().eq('id', m.realId);
+        if (error) throw error;
+        setRetiros(prev => prev.filter(r => r.id !== m.realId));
+        logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado retiro: ${m.concepto} - ${m.monto}`);
+      } else if (m.entityType === 'transferencia_boveda') {
+        const { error } = await supabase.from('finanzas_transferencias_boveda').delete().eq('id', m.realId);
+        if (error) throw error;
+        setTransferenciasBoveda(prev => prev.filter(t => t.id !== m.realId));
+        if (m.raw?.tipo === 'deposito_manual' || (m.raw?.tipo === 'distribucion_caja' && m.raw?.destino === 'Bóveda')) {
+          const nuevoSaldo = Math.max(0, saldoBoveda - Number(m.monto));
+          await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+          setSaldoBoveda(nuevoSaldo);
+        } else if (m.raw?.tipo === 'transferencia') {
+          const nuevoSaldo = saldoBoveda + Number(m.monto);
+          await supabase.from('finanzas_config').upsert([{ id: 'default', boveda_saldo_acumulado: nuevoSaldo }]);
+          setSaldoBoveda(nuevoSaldo);
+        }
+        logAuditoria(user, 'Finanzas', 'ELIMINAR', `Eliminado movimiento de bóveda/distribución: ${m.concepto} - ${m.monto}`);
+      }
+    } catch (err) {
+      console.error('Error al eliminar movimiento:', err);
+      alert('Error al eliminar: ' + (err.message || 'Error en el servidor'));
+    }
+  };
+
+  const openEditModal = (entityType, rawData, tabla) => {
+    if (!isSuperAdmin) {
+      alert("No tienes permisos de Super Admin para editar transacciones.");
+      return;
+    }
+    if (String(rawData?.id).startsWith('virtual_')) {
+      alert("Este registro está sincronizado automáticamente desde el CRM (Clientes). Para editarlo, ve a Directorio.");
+      return;
+    }
+    setItemAEditar({
+      entityType,
+      tabla,
+      id: rawData.id,
+      data: {
+        ...rawData,
+        monto: rawData.monto ?? '',
+        concepto: rawData.concepto ?? rawData.motivo ?? '',
+        categoria: rawData.categoria ?? CATEGORIAS_GASTOS[0],
+        fecha: rawData.fecha ?? rawData.fechaInicio ?? rawData.fecha_inicio ?? new Date().toISOString().split('T')[0],
+        fechaInicio: rawData.fechaInicio ?? rawData.fecha_inicio ?? new Date().toISOString().split('T')[0],
+        diaCobro: rawData.diaCobro ?? rawData.dia_cobro ?? 1,
+        fechaLimite: rawData.fechaLimite ?? rawData.fecha_limite ?? '',
+        cliente: rawData.cliente ?? '',
+        tipo: rawData.tipo ?? 'Retainer',
+        metodo: rawData.metodo ?? 'Caja General',
+        socio: rawData.socio ?? 'Davilson',
+        destino: rawData.destino ?? 'Bóveda'
+      }
+    });
+    setModalEditar(true);
+  };
+
+  const handleGuardarEdicion = async (e) => {
+    e.preventDefault();
+    if (!itemAEditar) return;
+
+    const { entityType, tabla, id, data } = itemAEditar;
+    const montoNum = Number(data.monto);
+
+    try {
+      if (entityType === 'gasto_fijo') {
+        const payload = {
+          concepto: data.concepto,
+          categoria: data.categoria,
+          monto: montoNum,
+          dia_cobro: Number(data.diaCobro),
+          fecha_inicio: data.fechaInicio
+        };
+        const { error } = await supabase.from('finanzas_gastos_fijos').update(payload).eq('id', id);
+        if (error) throw error;
+        setGastosFijos(prev => prev.map(f => f.id === id ? { ...f, ...payload, diaCobro: payload.dia_cobro, fechaInicio: payload.fecha_inicio } : f));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editado Gasto Fijo: ${payload.concepto} - $${payload.monto}`);
+      } else if (entityType === 'gasto') {
+        const payload = {
+          concepto: data.concepto,
+          categoria: data.categoria,
+          monto: montoNum,
+          fecha: data.fecha,
+          metodo: data.metodo
+        };
+        const { error } = await supabase.from('finanzas_gastos').update(payload).eq('id', id);
+        if (error) throw error;
+        setGastos(prev => prev.map(g => g.id === id ? { ...g, ...payload } : g));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editado Gasto: ${payload.concepto} - $${payload.monto}`);
+      } else if (entityType === 'ingreso') {
+        const payload = {
+          concepto: data.concepto,
+          cliente: data.cliente,
+          tipo: data.tipo,
+          monto: montoNum,
+          fecha: data.fecha
+        };
+        const { error } = await supabase.from('finanzas_ingresos').update(payload).eq('id', id);
+        if (error) throw error;
+        setIngresos(prev => prev.map(i => i.id === id ? { ...i, ...payload } : i));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editado Ingreso: ${payload.concepto} - $${payload.monto}`);
+      } else if (entityType === 'compra_tdc') {
+        const payload = {
+          concepto: data.concepto,
+          categoria: data.categoria,
+          monto: montoNum,
+          fecha: data.fecha
+        };
+        const { error } = await supabase.from('finanzas_compras_tdc').update(payload).eq('id', id);
+        if (error) throw error;
+        setComprasTDC(prev => prev.map(c => c.id === id ? { ...c, ...payload } : c));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editada Compra TDC: ${payload.concepto} - $${payload.monto}`);
+      } else if (entityType === 'deuda') {
+        const payload = {
+          concepto: data.concepto,
+          monto: montoNum,
+          fecha_limite: data.fechaLimite
+        };
+        const { error } = await supabase.from('finanzas_deudas').update(payload).eq('id', id);
+        if (error) throw error;
+        setDeudasPendientes(prev => prev.map(d => d.id === id ? { ...d, ...payload, fechaLimite: payload.fecha_limite } : d));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editada Deuda: ${payload.concepto} - $${payload.monto}`);
+      } else if (entityType === 'retiro') {
+        const payload = {
+          socio: data.socio,
+          monto: montoNum,
+          fecha: data.fecha
+        };
+        const { error } = await supabase.from('finanzas_retiros').update(payload).eq('id', id);
+        if (error) throw error;
+        setRetiros(prev => prev.map(r => r.id === id ? { ...r, ...payload } : r));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editado Retiro: ${payload.socio} - $${payload.monto}`);
+      } else if (entityType === 'transferencia_boveda') {
+        const payload = {
+          concepto: data.concepto,
+          monto: montoNum,
+          destino: data.destino
+        };
+        const { error } = await supabase.from('finanzas_transferencias_boveda').update(payload).eq('id', id);
+        if (error) throw error;
+        setTransferenciasBoveda(prev => prev.map(t => t.id === id ? { ...t, ...payload } : t));
+        logAuditoria(user, 'Finanzas', 'EDITAR', `Editado Mov. Bóveda: ${payload.concepto} - $${payload.monto}`);
+      }
+
+      setModalEditar(false);
+      setItemAEditar(null);
+      alert('Registro actualizado correctamente.');
+    } catch (err) {
+      console.error('Error al actualizar registro:', err);
+      alert('Error al guardar cambios: ' + (err.message || 'Error desconocido'));
+    }
   };
 
   // Formato Moneda
@@ -814,73 +1040,6 @@ export default function Finanzas() {
         >
           <Wallet size={15} /> Registrar Retiro / Anticipo
         </button>
-
-      {/* Modal Inyectar Fondos (Bóveda) */}
-      {modalInyectar && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
-            <h3 className="text-xl font-zodiak font-bold mb-4 text-green-600">+ Inyectar Fondos a Bóveda</h3>
-            <form onSubmit={handleInyectar} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label>
-                <input required type="number" min="1" value={formInyectar.monto} onChange={e=>setFormInyectar({...formInyectar, monto: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg text-green-600" placeholder="0"/>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Motivo / Origen</label>
-                <select value={formInyectar.motivo} onChange={e=>setFormInyectar({...formInyectar, motivo: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer">
-                  <option>Aporte de Capital Propio</option>
-                  <option>Pago / Devolución de Deuda</option>
-                  <option>Ajuste de Caja / Rendimientos</option>
-                  <option>Otro</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Notas / Detalle (Opcional)</label>
-                <input type="text" value={formInyectar.notas} onChange={e=>setFormInyectar({...formInyectar, notas: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="Ej: Pago de tarjeta Davivienda..."/>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={()=>setModalInyectar(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
-                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-green-600 text-white font-bold text-xs">Confirmar Depósito</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Distribuir Fondos (Caja General) */}
-      {modalDistribuir && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
-            <h3 className="text-xl font-zodiak font-bold mb-1">Distribuir Caja General</h3>
-            <p className="text-xs text-gray-500 mb-4">Disponible: <strong className="text-gloss-burgundy dark:text-gloss-pink">{formatCOP(cajaDisponible || 0)}</strong></p>
-            <form onSubmit={handleDistribuir} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Bóveda (Ahorro)</label>
-                <input type="number" min="0" value={formDistribuir.boveda} onChange={e=>setFormDistribuir({...formDistribuir, boveda: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
-              </div>
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Fondo Operación</label>
-                <input type="number" min="0" value={formDistribuir.operacion} onChange={e=>setFormDistribuir({...formDistribuir, operacion: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Davilson</label>
-                  <input type="number" min="0" value={formDistribuir.davilson} onChange={e=>setFormDistribuir({...formDistribuir, davilson: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">A Santiago</label>
-                  <input type="number" min="0" value={formDistribuir.santiago} onChange={e=>setFormDistribuir({...formDistribuir, santiago: e.target.value})} className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" placeholder="0"/>
-                </div>
-              </div>
-              <div className="flex gap-2 pt-4">
-                <button type="button" onClick={()=>setModalDistribuir(false)} className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs">Cancelar</button>
-                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs">Confirmar Distribución</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       </div>
     );
   };
@@ -1077,12 +1236,13 @@ export default function Finanzas() {
                 <th className="py-3.5 px-4">Concepto</th>
                 <th className="py-3.5 px-4">Origen / Destino</th>
                 <th className="py-3.5 px-4 text-right">Monto (COP)</th>
+                <th className="py-3.5 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {filteredLibroMayor.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-8 text-center text-gray-400">
+                  <td colSpan="7" className="py-8 text-center text-gray-400">
                     No se encontraron movimientos registrados con el filtro actual.
                   </td>
                 </tr>
@@ -1118,6 +1278,26 @@ export default function Finanzas() {
                         : 'text-red-600 dark:text-red-400'
                     }`}>
                       {m.esPositivo ? `+${formatCOP(m.monto)}` : m.esTransferencia ? `↔ ${formatCOP(m.monto)}` : `-${formatCOP(m.monto)}`}
+                    </td>
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {!String(m.realId).startsWith('virtual_') && (
+                          <button 
+                            onClick={() => openEditModal(m.entityType, m.raw, m.entityType === 'ingreso' ? 'finanzas_ingresos' : m.entityType === 'gasto' ? 'finanzas_gastos' : m.entityType === 'retiro' ? 'finanzas_retiros' : 'finanzas_transferencias_boveda')} 
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                            title="Editar movimiento"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => deleteMovimientoLibro(m)} 
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                          title="Eliminar movimiento"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1155,7 +1335,12 @@ export default function Finanzas() {
                   <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="p-3"><p className="font-medium">{c.concepto}</p><span className="text-xs text-gray-500">{c.fecha}</span></td>
                     <td className="p-3 font-medium text-red-500 text-right">-{formatCOP(c.monto)}</td>
-                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button onClick={() => openEditModal('compra_tdc', c, 'finanzas_compras_tdc')} className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="Editar compra TDC"><Pencil size={15} /></button>
+                        <button onClick={() => deleteItem('finanzas_compras_tdc', setComprasTDC, comprasTDC, c.id, 'compra TDC')} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Eliminar compra TDC"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1186,9 +1371,10 @@ export default function Finanzas() {
                     </td>
                     <td className="p-3 font-medium text-orange-500 text-right">{formatCOP(d.monto)}</td>
                     <td className="p-3 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button onClick={() => pagarDeudaTercero(d)} title="Liquidar/Pagar" className="text-gray-400 hover:text-green-500"><CheckCircle size={18} /></button>
-                        <button onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button onClick={() => pagarDeudaTercero(d)} title="Liquidar/Pagar Deuda" className="text-gray-400 hover:text-green-500 p-1"><CheckCircle size={17} /></button>
+                        <button onClick={() => openEditModal('deuda', d, 'finanzas_deudas')} className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="Editar deuda"><Pencil size={15} /></button>
+                        <button onClick={() => deleteItem('finanzas_deudas', setDeudasPendientes, deudasPendientes, d.id, 'deuda')} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Eliminar deuda"><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>
@@ -1229,7 +1415,12 @@ export default function Finanzas() {
                       )}
                     </td>
                     <td className="p-3 font-bold text-gray-900 dark:text-white text-right">-{formatCOP(f.monto)}</td>
-                    <td className="p-3 text-center"><button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id)} className={!(isSuperAdmin ?? false) ? "hidden" : "text-gray-400 hover:text-red-500"}><Trash2 size={16} /></button></td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button onClick={() => openEditModal('gasto_fijo', f, 'finanzas_gastos_fijos')} className="p-1 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="Editar gasto fijo"><Pencil size={15} /></button>
+                        <button onClick={() => deleteItem('finanzas_gastos_fijos', setGastosFijos, gastosFijos, f.id, 'gasto fijo')} className="p-1 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Eliminar gasto fijo"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -1641,6 +1832,170 @@ export default function Finanzas() {
         </div>
       )}
 
+      {/* Modal Universal de Edición */}
+      {modalEditar && itemAEditar && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gloss-black rounded-3xl w-full max-w-md p-6 shadow-xl border border-gray-200 dark:border-gray-800">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-zodiak font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Pencil size={18} className="text-gloss-burgundy dark:text-gloss-pink" /> 
+                Editar {itemAEditar.entityType === 'gasto_fijo' ? 'Gasto Fijo' : itemAEditar.entityType === 'compra_tdc' ? 'Compra TDC' : itemAEditar.entityType === 'deuda' ? 'Deuda' : itemAEditar.entityType === 'ingreso' ? 'Ingreso' : itemAEditar.entityType === 'retiro' ? 'Retiro' : 'Gasto'}
+              </h3>
+              <button 
+                onClick={() => { setModalEditar(false); setItemAEditar(null); }}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicion} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Concepto / Nombre</label>
+                <input 
+                  required 
+                  type="text"
+                  value={itemAEditar.data.concepto} 
+                  onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, concepto: e.target.value } })}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                />
+              </div>
+
+              {itemAEditar.entityType === 'ingreso' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Cliente Asociado</label>
+                  <input 
+                    type="text"
+                    value={itemAEditar.data.cliente} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, cliente: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                  />
+                </div>
+              )}
+
+              {['gasto', 'gasto_fijo', 'compra_tdc'].includes(itemAEditar.entityType) && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Categoría</label>
+                  <select 
+                    value={itemAEditar.data.categoria} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, categoria: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                  >
+                    {CATEGORIAS_GASTOS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {itemAEditar.entityType === 'gasto' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Método / Origen</label>
+                  <select 
+                    value={itemAEditar.data.metodo} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, metodo: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-gloss-burgundy dark:text-gloss-pink cursor-pointer"
+                  >
+                    <option>Caja General</option>
+                    <option>Bóveda de Agencia</option>
+                    <option>Cuenta Davilson</option>
+                    <option>Cuenta Santiago</option>
+                    <option>Tarjeta de Crédito (TDC)</option>
+                  </select>
+                </div>
+              )}
+
+              {itemAEditar.entityType === 'retiro' && (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Socio</label>
+                  <select 
+                    value={itemAEditar.data.socio} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, socio: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium cursor-pointer"
+                  >
+                    <option>Davilson</option>
+                    <option>Santiago</option>
+                  </select>
+                </div>
+              )}
+
+              {itemAEditar.entityType === 'gasto_fijo' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Día de Cobro (1-31)</label>
+                    <input 
+                      required 
+                      type="number" 
+                      min="1" 
+                      max="31" 
+                      value={itemAEditar.data.diaCobro} 
+                      onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, diaCobro: e.target.value } })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha Inicio</label>
+                    <input 
+                      required 
+                      type="date" 
+                      value={itemAEditar.data.fechaInicio} 
+                      onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, fechaInicio: e.target.value } })}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                    />
+                  </div>
+                </div>
+              ) : itemAEditar.entityType === 'deuda' ? (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha Límite Pago</label>
+                  <input 
+                    type="date" 
+                    value={itemAEditar.data.fechaLimite} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, fechaLimite: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Fecha</label>
+                  <input 
+                    type="date" 
+                    value={itemAEditar.data.fecha} 
+                    onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, fecha: e.target.value } })}
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-medium" 
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Monto (COP)</label>
+                <input 
+                  required 
+                  type="number" 
+                  min="0" 
+                  value={itemAEditar.data.monto} 
+                  onChange={e => setItemAEditar({ ...itemAEditar, data: { ...itemAEditar.data, monto: e.target.value } })}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 font-bold text-lg text-gloss-burgundy dark:text-gloss-pink" 
+                  placeholder="0" 
+                />
+              </div>
+
+              <div className="flex gap-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => { setModalEditar(false); setItemAEditar(null); }}
+                  className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 font-bold text-xs hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2.5 rounded-xl bg-gloss-burgundy text-white font-bold text-xs hover:bg-gloss-burgundy/90 transition-colors shadow-md"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
