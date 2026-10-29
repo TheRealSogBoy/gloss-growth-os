@@ -1,0 +1,14 @@
+{
+  "accounts": [
+    {
+      "key": "cliente-confirmado",
+      "id": "act_REEMPLAZAR",
+      "currency": "COP",
+      "pageId": "REEMPLAZAR",
+      "whatsapp": "REEMPLAZAR",
+      "instagramId": null,
+      "maxDailyMinor": 0,
+      "tokenEnv": "META_TOKEN_CLIENTE"
+    }
+  ]
+}

@@ -89,6 +89,7 @@ export default function Layout() {
     { label: 'Calendario', icon: Calendar, to: '/calendario' },
     { label: 'Finanzas', icon: Wallet, to: '/finanzas' },
     { label: 'Catálogo', icon: ShoppingBag, to: '/catalogo' },
+    { label: 'Meta Ads', icon: Share2, to: '/meta-ads' },
   ];
 
   const userAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
